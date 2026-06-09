@@ -615,20 +615,25 @@ async function processMessage(
     return
   }
 
-  // Update conversation
-  const { error: convError } = await supabaseAdmin()
-    .from('conversations')
-    .update({
-      last_message_text: contentText || `[${message.type}]`,
-      last_message_at: new Date().toISOString(),
-      unread_count: (conversation.unread_count || 0) + 1,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', conversation.id)
+  console.log(
+  '[WEBHOOK]',
+  conversation.id,
+  'current unread:',
+  conversation.unread_count
+)
 
-  if (convError) {
-    console.error('Error updating conversation:', convError)
+  // Update conversation atomically
+const { error: convError } = await supabaseAdmin().rpc(
+  'update_conversation_on_inbound',
+  {
+    p_conversation_id: conversation.id,
+    p_last_message: contentText || `[${message.type}]`,
   }
+)
+
+if (convError) {
+  console.error('Error updating conversation:', convError)
+}
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate

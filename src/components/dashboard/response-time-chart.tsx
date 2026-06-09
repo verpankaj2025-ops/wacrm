@@ -78,7 +78,7 @@ export function ResponseTimeChart({
         </div>
       </header>
 
-      <div className="p-5">
+      <div className="p-5 min-h-[320px]">
         {loading || !data ? (
           <Skeleton className="h-[260px] w-full" />
         ) : !hasData ? (
@@ -92,15 +92,11 @@ export function ResponseTimeChart({
             data={chartData}
             index="day"
             categories={[CATEGORY]}
-            // 'violet' maps to Tailwind's `fill-violet-500` — matches
-            // the brand accent the hand-rolled bars used (#7c3aed).
             colors={['violet']}
             valueFormatter={(value) => `${value.toFixed(1)}m`}
             showLegend={false}
             yAxisWidth={48}
-            // Compact height so the chart sits well inside the card
-            // without dominating the row alongside the donut + activity feed.
-            className="h-[260px]"
+            className="h-[260px] w-full min-w-0"
           />
         )}
       </div>

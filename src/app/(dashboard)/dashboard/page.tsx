@@ -57,9 +57,35 @@ export default function DashboardPage() {
 
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
+  const [dueTodayCount, setDueTodayCount] = useState(0)
 
   const loadAll = useCallback(() => {
     const db = createClient()
+    const today = new Date()
+today.setHours(0, 0, 0, 0)
+
+const tomorrow = new Date(today)
+tomorrow.setDate(tomorrow.getDate() + 1)
+
+void (async () => {
+  try {
+    const { data, error } = await db
+      .from('tasks')
+      .select('id')
+      .gte('due_at', today.toISOString())
+      .lt('due_at', tomorrow.toISOString())
+      .neq('status', 'completed')
+
+    if (error) {
+      console.error('[dashboard] due today failed:', error)
+      return
+    }
+
+    setDueTodayCount(data?.length ?? 0)
+  } catch (err) {
+    console.error('[dashboard] due today failed:', err)
+  }
+})()
 
     // Kick everything off in parallel. Each block has its own
     // setState + finally so a slow query doesn't hold up faster

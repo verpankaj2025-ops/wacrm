@@ -12,6 +12,12 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -81,6 +87,10 @@ export function ContactDetailView({
   // Deals tab
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loadingDeals, setLoadingDeals] = useState(false);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+const [taskTitle, setTaskTitle] = useState('');
+const [taskDescription, setTaskDescription] = useState('');
+const [creatingTask, setCreatingTask] = useState(false);
 
   const fetchContact = useCallback(async () => {
     if (!contactId) return;
@@ -316,6 +326,47 @@ export function ContactDetailView({
     setSavingCustom(false);
   }
 
+  async function createTask() {
+  if (!contactId || !taskTitle.trim()) {
+    toast.error('Task title is required');
+    return;
+  }
+
+  setCreatingTask(true);
+
+  try {
+    const res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: taskTitle.trim(),
+        description: taskDescription.trim() || null,
+        contact_id: contactId,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to create task');
+    }
+
+    toast.success('Task created');
+
+    setTaskTitle('');
+    setTaskDescription('');
+    setTaskDialogOpen(false);
+  } catch (err) {
+    toast.error(
+      err instanceof Error ? err.message : 'Failed to create task'
+    );
+  }
+
+  setCreatingTask(false);
+}
+
   function getInitials(name?: string | null) {
     if (!name) return '?';
     return name
@@ -353,6 +404,16 @@ export function ContactDetailView({
                   <SheetDescription className="text-slate-400 text-xs mt-0.5">
                     Contact details
                   </SheetDescription>
+                  <div className="mt-2">
+  <Button
+    size="sm"
+    onClick={() => setTaskDialogOpen(true)}
+    className="h-7 text-xs"
+  >
+    <Plus className="size-3 mr-1" />
+    Create Task
+  </Button>
+</div>
                   <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-slate-400">
                     <button
                       onClick={copyPhone}
@@ -683,6 +744,44 @@ export function ContactDetailView({
           </div>
         )}
       </SheetContent>
+
+      <Dialog
+  open={taskDialogOpen}
+  onOpenChange={setTaskDialogOpen}
+>
+  <DialogContent className="bg-slate-900 border-slate-700 text-white">
+    <DialogHeader>
+      <DialogTitle>Create Task</DialogTitle>
+    </DialogHeader>
+
+    <div className="space-y-3">
+      <Input
+        placeholder="Task title"
+        value={taskTitle}
+        onChange={(e) => setTaskTitle(e.target.value)}
+      />
+
+      <Textarea
+        placeholder="Description (optional)"
+        value={taskDescription}
+        onChange={(e) => setTaskDescription(e.target.value)}
+      />
+
+      <Button
+        onClick={createTask}
+        disabled={creatingTask}
+        className="w-full"
+      >
+        {creatingTask ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          'Create Task'
+        )}
+      </Button>
+    </div>
+  </DialogContent>
+</Dialog>
+
     </Sheet>
   );
 }

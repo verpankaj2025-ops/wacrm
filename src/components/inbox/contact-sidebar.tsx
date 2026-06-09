@@ -19,6 +19,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
+import { toast } from "sonner";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2 } from "lucide-react";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -32,6 +44,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+const [taskTitle, setTaskTitle] = useState("");
+const [taskDescription, setTaskDescription] = useState("");
+const [creatingTask, setCreatingTask] = useState(false);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -115,6 +131,47 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     setAddingNote(false);
   }, [contact, newNote, accountId]);
 
+  const createTask = useCallback(async () => {
+  if (!contact || !taskTitle.trim()) {
+    toast.error("Task title is required");
+    return;
+  }
+
+  setCreatingTask(true);
+
+  try {
+    const res = await fetch("/api/tasks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title: taskTitle.trim(),
+        description: taskDescription.trim() || null,
+        contact_id: contact.id,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error);
+    }
+
+    toast.success("Task created");
+
+    setTaskTitle("");
+    setTaskDescription("");
+    setTaskDialogOpen(false);
+  } catch (err) {
+    toast.error(
+      err instanceof Error ? err.message : "Failed to create task"
+    );
+  }
+
+  setCreatingTask(false);
+}, [contact, taskTitle, taskDescription]);
+
   if (!contact) {
     return (
       <div className="flex h-full w-70 items-center justify-center border-l border-slate-800 bg-slate-900">
@@ -146,6 +203,18 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             <h3 className="mt-3 text-sm font-semibold text-white">
               {displayName}
             </h3>
+
+            <div className="mt-3">
+  <Button
+    size="sm"
+    onClick={() => setTaskDialogOpen(true)}
+    className="w-full"
+  >
+    <Plus className="h-4 w-4 mr-1" />
+    Create Task
+  </Button>
+</div>
+
             {contact.company && (
               <p className="text-xs text-slate-400">{contact.company}</p>
             )}
@@ -293,7 +362,45 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             </div>
           </div>
         </div>
-      </ScrollArea>
+            </ScrollArea>
+
+      <Dialog
+        open={taskDialogOpen}
+        onOpenChange={setTaskDialogOpen}
+      >
+        <DialogContent className="bg-slate-900 border-slate-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Create Task</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Input
+              placeholder="Task title"
+              value={taskTitle}
+              onChange={(e) => setTaskTitle(e.target.value)}
+            />
+
+            <Textarea
+              placeholder="Description"
+              value={taskDescription}
+              onChange={(e) => setTaskDescription(e.target.value)}
+            />
+
+            <Button
+              onClick={createTask}
+              disabled={creatingTask}
+              className="w-full"
+            >
+              {creatingTask ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Create Task"
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

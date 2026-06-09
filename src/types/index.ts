@@ -528,3 +528,27 @@ export interface AutomationLog {
   created_at: string;
   contact?: Contact;
 }
+export interface Task {
+  id: string
+
+  account_id: string
+  created_by: string
+
+  contact_id: string | null
+  conversation_id: string | null
+
+  title: string
+  description: string | null
+
+  priority: string
+  status: string
+
+  due_at: string | null
+
+  assigned_to: string | null
+
+  completed_at: string | null
+
+  created_at: string
+  updated_at: string
+}

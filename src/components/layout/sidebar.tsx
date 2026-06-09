@@ -20,6 +20,7 @@ import {
   Users,
   UsersRound,
   Workflow,
+  CheckSquare,
   X,
   Zap,
 } from "lucide-react";
@@ -90,6 +91,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inbox", label: "Inbox", icon: MessageSquare },
   { href: "/contacts", label: "Contacts", icon: Users },
+  { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/pipelines", label: "Pipelines", icon: GitBranch },
   { href: "/broadcasts", label: "Broadcasts", icon: Radio },
   { href: "/automations", label: "Automations", icon: Zap },
