@@ -18,6 +18,7 @@ import { PasswordForm } from '@/components/settings/password-form';
 import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { MembersTab } from '@/components/settings/members-tab';
+import { IntegrationsTab } from '@/components/settings/integrations-tab';
 
 const TAB_VALUES = [
   'profile',
@@ -26,6 +27,7 @@ const TAB_VALUES = [
   'tags',
   'appearance',
   'members',
+  'integrations',
 ] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
@@ -104,6 +106,15 @@ export default function SettingsPage() {
             <UsersRound className="size-4" />
             Members
           </TabsTrigger>
+
+          <TabsTrigger
+  value="integrations"
+  className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+>
+  <Settings className="size-4" />
+  Integrations
+</TabsTrigger>
+
         </TabsList>
 
         <TabsContent value="profile" className="space-y-6">
@@ -131,6 +142,11 @@ export default function SettingsPage() {
         <TabsContent value="members">
           <MembersTab />
         </TabsContent>
+
+        <TabsContent value="integrations">
+  <IntegrationsTab />
+</TabsContent>
+
       </Tabs>
     </div>
   );

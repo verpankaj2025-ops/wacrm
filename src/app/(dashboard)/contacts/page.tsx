@@ -267,6 +267,13 @@ export default function ContactsPage() {
               <TableHead className="text-slate-400 hidden md:table-cell">Email</TableHead>
               <TableHead className="text-slate-400 hidden lg:table-cell">Company</TableHead>
               <TableHead className="text-slate-400 hidden md:table-cell">Tags</TableHead>
+              <TableHead className="text-slate-400 hidden lg:table-cell">
+                 Lead Status
+              </TableHead>
+
+              <TableHead className="text-slate-400 hidden lg:table-cell">
+                 Source
+              </TableHead>
               <TableHead className="text-slate-400 hidden lg:table-cell">Created</TableHead>
               <TableHead className="text-slate-400 w-12" />
             </TableRow>
@@ -347,6 +354,19 @@ export default function ContactsPage() {
                       )}
                     </div>
                   </TableCell>
+
+                  <TableCell className="hidden lg:table-cell">
+                    <span className="text-xs text-slate-300">
+                       {contact.lead_status || 'new'}
+                     </span>
+                   </TableCell>
+
+                   <TableCell className="hidden lg:table-cell">
+                      <span className="text-xs text-slate-400">
+                         {contact.lead_source || 'whatsapp'}
+                      </span>
+                    </TableCell>
+
                   <TableCell className="text-slate-500 text-xs hidden lg:table-cell">
                     {new Date(contact.created_at).toLocaleDateString('en-US', {
                       month: 'short',

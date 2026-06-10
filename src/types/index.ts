@@ -94,6 +94,12 @@ export interface Contact {
   email?: string;
   company?: string;
   avatar_url?: string;
+
+  // Lead Management Foundation (024)
+  lead_source?: string;
+  lead_status?: string;
+  assigned_to?: string | null;
+
   created_at: string;
   updated_at: string;
 }
@@ -197,6 +203,35 @@ export interface MessageReaction {
   actor_id?: string;
   emoji: string;
   created_at: string;
+}
+
+export type IntegrationProvider =
+  | "whatsapp"
+  | "meta_lead_ads"
+  | "instagram"
+  | "messenger"
+  | "google_business"
+  | "website_form"
+  | "custom_webhook";
+
+export type IntegrationStatus =
+  | "connected"
+  | "disconnected"
+  | "error";
+
+export interface Integration {
+  id: string;
+  account_id: string;
+
+  provider: IntegrationProvider;
+  status: IntegrationStatus;
+
+  config_json: Record<string, unknown>;
+
+  last_sync_at?: string;
+
+  created_at: string;
+  updated_at: string;
 }
 
 export interface WhatsAppConfig {

@@ -44,6 +44,9 @@ export function ContactForm({
   const [company, setCompany] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const [leadStatus, setLeadStatus] = useState('new');
+const [leadSource, setLeadSource] = useState('whatsapp');
+
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [loadingTags, setLoadingTags] = useState(false);
@@ -54,6 +57,10 @@ export function ContactForm({
       setPhone(contact?.phone ?? '');
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
+
+      setLeadStatus(contact?.lead_status ?? 'new');
+      setLeadSource(contact?.lead_source ?? 'whatsapp');
+
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       fetchTags();
     }
@@ -101,25 +108,33 @@ export function ContactForm({
         const { error } = await supabase
           .from('contacts')
           .update({
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-            updated_at: new Date().toISOString(),
-          })
+              name: name.trim() || null,
+              phone: phone.trim(),
+              email: email.trim() || null,
+              company: company.trim() || null,
+
+              lead_status: leadStatus,
+               lead_source: leadSource,
+
+               updated_at: new Date().toISOString(),
+             })
           .eq('id', contactId);
         if (error) throw error;
       } else {
         const { data, error } = await supabase
           .from('contacts')
           .insert({
-            user_id: user.id,
-            account_id: accountId,
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-          })
+          user_id: user.id,
+          account_id: accountId,
+
+           name: name.trim() || null,
+           phone: phone.trim(),
+           email: email.trim() || null,
+           company: company.trim() || null,
+
+           lead_status: leadStatus,
+           lead_source: leadSource,
+         })
           .select('id')
           .single();
         if (error) throw error;
@@ -226,6 +241,43 @@ export function ContactForm({
               className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
             />
           </div>
+
+          <div className="space-y-2">
+  <Label className="text-slate-300">
+    Lead Status
+  </Label>
+
+  <select
+    value={leadStatus}
+    onChange={(e) => setLeadStatus(e.target.value)}
+    className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white"
+  >
+    <option value="new">New</option>
+    <option value="contacted">Contacted</option>
+    <option value="qualified">Qualified</option>
+    <option value="won">Won</option>
+    <option value="lost">Lost</option>
+  </select>
+</div>
+
+<div className="space-y-2">
+  <Label className="text-slate-300">
+    Lead Source
+  </Label>
+
+  <select
+    value={leadSource}
+    onChange={(e) => setLeadSource(e.target.value)}
+    className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white"
+  >
+    <option value="whatsapp">WhatsApp</option>
+    <option value="meta_ads">Meta Ads</option>
+    <option value="instagram">Instagram</option>
+    <option value="website">Website</option>
+    <option value="google">Google</option>
+    <option value="manual">Manual</option>
+  </select>
+</div>
 
           <div className="space-y-2">
             <Label className="text-slate-300">Tags</Label>
