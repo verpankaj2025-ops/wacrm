@@ -16,6 +16,7 @@ import {
   UserCheck,
   PencilLine,
   Briefcase,
+  CheckSquare,
   Hourglass,
   GitBranch,
   Webhook,
@@ -84,6 +85,7 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
   assign_conversation: { label: "Assign Conversation", icon: UserCheck, border: "border-l-primary" },
   update_contact_field: { label: "Update Contact Field", icon: PencilLine, border: "border-l-primary" },
   create_deal: { label: "Create Deal", icon: Briefcase, border: "border-l-primary" },
+  create_task: { label: "Create Task", icon: CheckSquare, border: "border-l-primary" },
   wait: { label: "Wait", icon: Hourglass, border: "border-l-slate-500" },
   condition: { label: "Condition (If/Else)", icon: GitBranch, border: "border-l-amber-500" },
   send_webhook: { label: "Send Webhook", icon: Webhook, border: "border-l-primary" },
@@ -98,6 +100,7 @@ const ADDABLE_STEPS: AutomationStepType[] = [
   "assign_conversation",
   "update_contact_field",
   "create_deal",
+  "create_task",
   "wait",
   "condition",
   "send_webhook",
@@ -142,6 +145,14 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { field: "name", value: "" }
     case "create_deal":
       return { pipeline_id: "", stage_id: "", title: "", value: 0 }
+      case "create_task":
+  return {
+    title: "",
+    description: "",
+    priority: "medium",
+    assigned_to: "",
+    due_in_hours: 24,
+  }
     case "wait":
       return { amount: 1, unit: "hours" }
     case "condition":
@@ -833,6 +844,66 @@ function StepEditor({
           </FieldBlock>
         </>
       )
+      case "create_task":
+  return (
+    <>
+      <FieldBlock label="Task Title">
+        <Input
+          value={(cfg.title as string) ?? ""}
+          onChange={(e) => set({ title: e.target.value })}
+          className="bg-slate-800 text-white"
+        />
+      </FieldBlock>
+
+      <FieldBlock label="Description">
+        <Textarea
+          value={(cfg.description as string) ?? ""}
+          onChange={(e) =>
+            set({ description: e.target.value })
+          }
+          className="bg-slate-800 text-white"
+        />
+      </FieldBlock>
+
+      <FieldBlock label="Priority">
+        <select
+          value={(cfg.priority as string) ?? "medium"}
+          onChange={(e) =>
+            set({ priority: e.target.value })
+          }
+          className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white"
+        >
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </FieldBlock>
+
+      <FieldBlock label="Assigned User Id">
+        <Input
+          value={(cfg.assigned_to as string) ?? ""}
+          onChange={(e) =>
+            set({ assigned_to: e.target.value })
+          }
+          className="bg-slate-800 text-white"
+        />
+      </FieldBlock>
+
+      <FieldBlock label="Due After Hours">
+  <Input
+    type="number"
+    value={(cfg.due_in_hours as number) ?? 24}
+    onChange={(e) =>
+      set({
+        due_in_hours: Number(e.target.value),
+      })
+    }
+    className="bg-slate-800 text-white"
+  />
+</FieldBlock>
+
+    </>
+  )
     case "wait":
       return (
         <div className="grid grid-cols-2 gap-2">

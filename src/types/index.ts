@@ -379,7 +379,9 @@ export type AutomationStepType =
   | 'assign_conversation'
   | 'update_contact_field'
   | 'create_deal'
+  | 'create_task'
   | 'wait'
+  | 'create_task'
   | 'condition'
   | 'send_webhook'
   | 'close_conversation';
@@ -434,10 +436,18 @@ export interface UpdateContactFieldStepConfig {
 }
 
 export interface CreateDealStepConfig {
+  
   pipeline_id: string;
   stage_id: string;
   title: string;
   value?: number;
+}
+
+export interface CreateTaskStepConfig {
+  title: string;
+  description?: string;
+  priority?: string;
+  assigned_to?: string;
 }
 
 export interface WaitStepConfig {
@@ -472,6 +482,7 @@ export type AutomationStepConfig =
   | AssignConversationStepConfig
   | UpdateContactFieldStepConfig
   | CreateDealStepConfig
+  | CreateTaskStepConfig
   | WaitStepConfig
   | ConditionStepConfig
   | SendWebhookStepConfig

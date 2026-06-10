@@ -479,6 +479,59 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       return 'deal created'
     }
 
+    case 'create_task': {
+  const cfg = step.step_config as {
+    title?: string
+    description?: string
+    priority?: string
+    assigned_to?: string | null
+    due_in_hours?: number
+  }
+
+  const dueAt =
+    cfg.due_in_hours && cfg.due_in_hours > 0
+      ? new Date(
+          Date.now() + cfg.due_in_hours * 60 * 60 * 1000
+        ).toISOString()
+      : null
+
+  const result = await db
+  .from('tasks')
+  .insert({
+    account_id: args.automation.account_id,
+    created_by: args.automation.user_id,
+
+    contact_id: args.contactId ?? null,
+
+    conversation_id:
+      args.context.conversation_id ?? null,
+
+    title: interpolate(
+      cfg.title ?? 'Follow Up',
+      args
+    ),
+
+    description: cfg.description
+      ? interpolate(cfg.description, args)
+      : null,
+
+    priority: cfg.priority ?? 'medium',
+
+    status: 'pending',
+
+    due_at: dueAt,
+
+    assigned_to:
+  cfg.assigned_to &&
+  String(cfg.assigned_to).trim() !== ""
+    ? cfg.assigned_to
+    : null,
+  })
+  .select()
+
+  return 'task created'
+}
+
     case 'send_webhook': {
       const cfg = step.step_config as SendWebhookStepConfig
       if (!cfg.url) throw new Error('send_webhook needs url')
