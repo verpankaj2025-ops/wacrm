@@ -204,6 +204,35 @@ export async function resumePendingExecution(pending: {
 }
 }
 
+export async function replayAutomation(params: {
+  automationId: string
+  contactId: string | null
+  triggerEvent: AutomationTriggerType
+  context?: AutomationContext
+}): Promise<void> {
+  const db = supabaseAdmin()
+
+  const { data: automation, error } = await db
+    .from('automations')
+    .select('*')
+    .eq('id', params.automationId)
+    .single()
+
+  if (error || !automation) {
+    throw new Error('Automation not found')
+  }
+
+  await executeAutomation(
+    automation as Automation,
+    {
+      accountId: automation.account_id,
+      triggerType: params.triggerEvent,
+      contactId: params.contactId,
+      context: params.context ?? {},
+    }
+  )
+}
+
 // ------------------------------------------------------------
 // Internal execution
 // ------------------------------------------------------------

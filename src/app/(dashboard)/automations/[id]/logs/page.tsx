@@ -33,7 +33,37 @@ export default function AutomationLogsPage({
   const [logs, setLogs] = useState<AutomationLog[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openLogId, setOpenLogId] = useState<string | null>(null)
+  const [replayingLogId, setReplayingLogId] = useState<string | null>(null)
 
+  async function replayLog(logId: string) {
+  try {
+    setReplayingLogId(logId)
+
+    const response = await fetch(
+      `/api/automations/${id}/replay/${logId}`,
+      {
+        method: 'POST',
+      },
+    )
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error ?? 'Replay failed')
+    }
+
+    alert('Automation replay started')
+  } catch (err) {
+    alert(
+      err instanceof Error
+        ? err.message
+        : 'Replay failed',
+    )
+  } finally {
+    setReplayingLogId(null)
+  }
+}
+  
   useEffect(() => {
     async function load() {
       try {
@@ -140,6 +170,22 @@ export default function AutomationLogsPage({
                 </button>
                 {isOpen && (
                   <div className="border-t border-slate-800 px-4 py-3">
+                    
+                    {log.status === 'failed' && (
+  <div className="mb-3">
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={replayingLogId === log.id}
+      onClick={() => replayLog(log.id)}
+    >
+      {replayingLogId === log.id
+        ? 'Replaying...'
+        : 'Replay'}
+    </Button>
+  </div>
+)}
+                    
                     {log.error_message && (
                       <p className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
                         {log.error_message}
