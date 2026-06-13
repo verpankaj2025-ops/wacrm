@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
@@ -170,7 +171,9 @@ export async function POST(request: Request) {
     // 401 (not 200) — we want Meta's delivery dashboard to show failures
     // loudly if a misconfiguration causes signatures to stop matching,
     // rather than silently eating events.
-    console.warn('[webhook] rejected request with invalid signature')
+    logger.warn(
+  'whatsapp_webhook_invalid_signature'
+)
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
@@ -183,7 +186,15 @@ export async function POST(request: Request) {
 
   // Process asynchronously so we can ack Meta within their timeout.
   processWebhook(body).catch((error) => {
-    console.error('Error processing webhook:', error)
+    logger.error(
+  'whatsapp_webhook_processing_failed',
+  {
+    error:
+      error instanceof Error
+        ? error.message
+        : String(error),
+  }
+)
   })
 
   return NextResponse.json({ status: 'received' }, { status: 200 })
@@ -241,9 +252,14 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       }
 
       if (!configRows || configRows.length === 0) {
-        console.error('No config found for phone_number_id:', phoneNumberId)
-        continue
-      }
+        logger.error(
+           'whatsapp_config_not_found',
+         {
+           phoneNumberId,
+          }
+         )
+            continue
+          }
 
       if (configRows.length > 1) {
         console.error(
@@ -945,7 +961,14 @@ async function findOrCreateContact(
     .single()
 
   if (createError) {
-    console.error('Error creating contact:', createError)
+    logger.error(
+  'contact_creation_failed',
+  {
+    error: createError?.message,
+    accountId,
+    phone,
+  }
+)
     return null
   }
 
@@ -982,7 +1005,14 @@ async function findOrCreateConversation(
     .single()
 
   if (createError) {
-    console.error('Error creating conversation:', createError)
+    logger.error(
+  'conversation_creation_failed',
+  {
+    error: createError?.message,
+    accountId,
+    contactId,
+  }
+)
     return null
   }
 

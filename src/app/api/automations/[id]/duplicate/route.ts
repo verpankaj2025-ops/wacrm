@@ -8,18 +8,34 @@ export async function POST(
 ) {
   const { id } = await params
   const supabase = await createClient()
+    
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    
+    const { data: profile } = await supabase
+  .from('profiles')
+  .select('account_id')
+  .eq('user_id', user.id)
+  .single()
+
+const accountId = profile?.account_id
+
+if (!accountId) {
+  return NextResponse.json(
+    { error: 'Profile account not found' },
+    { status: 403 }
+  )
+}
 
   const admin = supabaseAdmin()
   const { data: original, error: origErr } = await admin
-    .from('automations')
-    .select('*')
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .maybeSingle()
+  .from('automations')
+  .select('*')
+  .eq('id', id)
+  .eq('account_id', accountId)
+  .maybeSingle()
   if (origErr) return NextResponse.json({ error: origErr.message }, { status: 500 })
   if (!original) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 

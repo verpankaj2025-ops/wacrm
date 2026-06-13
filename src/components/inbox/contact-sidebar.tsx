@@ -1,10 +1,19 @@
 "use client";
 
+import { DealForm } from "@/components/pipelines/deal-form";
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type {
+  Contact,
+  Deal,
+  ContactNote,
+  Tag,
+  Pipeline,
+  PipelineStage,
+} from "@/types";
+
 import {
   Phone,
   Mail,
@@ -37,6 +46,10 @@ interface ContactSidebarProps {
 }
 
 export function ContactSidebar({ contact }: ContactSidebarProps) {
+  const [dealOpen, setDealOpen] = useState(false);
+
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [stages, setStages] = useState<PipelineStage[]>([]);
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -45,14 +58,20 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
-const [taskTitle, setTaskTitle] = useState("");
-const [taskDescription, setTaskDescription] = useState("");
-const [creatingTask, setCreatingTask] = useState(false);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [members, setMembers] = useState<
+  { user_id: string; full_name: string }[]
+  >([]);
+
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
 
-    const supabase = createClient();
+  const supabase = createClient();
 
     // Fetch deals, notes, and tags in parallel
     const [dealsRes, notesRes, tagsRes] = await Promise.all([
@@ -84,13 +103,52 @@ const [creatingTask, setCreatingTask] = useState(false);
       setTags(mapped);
     }
   }, [contact]);
+  useEffect(() => {
+  if (!accountId) return;
+
+  const loadPipeline = async () => {
+    const supabase = createClient();
+
+    const { data: pipelineRows } = await supabase
+      .from("pipelines")
+      .select("*")
+      .limit(1);
+
+    if (!pipelineRows?.length) return;
+
+    setPipelines(pipelineRows as Pipeline[]);
+
+    const { data: stageRows } = await supabase
+      .from("pipeline_stages")
+      .select("*")
+      .eq("pipeline_id", pipelineRows[0].id)
+      .order("position");
+
+    setStages((stageRows ?? []) as PipelineStage[]);
+  };
+
+  loadPipeline();
+}, [accountId]);
 
   // Load on contact change. setContactData/setTags run inside async
   // Supabase callbacks, not synchronously in the effect body.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchContactData();
-  }, [fetchContactData]);
+  async function loadMembers() {
+    try {
+      const res = await fetch("/api/account/members");
+
+      if (!res.ok) return;
+
+      const data = await res.json();
+
+      setMembers(data.members || []);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  loadMembers();
+}, []);
 
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
@@ -172,6 +230,72 @@ const [creatingTask, setCreatingTask] = useState(false);
   setCreatingTask(false);
 }, [contact, taskTitle, taskDescription]);
 
+const updateLeadStatus = useCallback(
+  async (status: string) => {
+    if (!contact) return;
+
+    setUpdatingStatus(true);
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("contacts")
+        .update({
+          lead_status: status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", contact.id);
+
+      if (error) throw error;
+
+      toast.success("Lead status updated");
+
+      window.location.reload();
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to update status"
+      );
+    }
+
+    setUpdatingStatus(false);
+  },
+  [contact]
+);
+
+const updateAssignedUser = useCallback(
+  async (userId: string) => {
+    if (!contact) return;
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("contacts")
+        .update({
+          assigned_to: userId || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", contact.id);
+
+      if (error) throw error;
+
+      toast.success("Lead assigned");
+
+      window.location.reload();
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to assign lead"
+      );
+    }
+  },
+  [contact]
+);
+
   if (!contact) {
     return (
       <div className="flex h-full w-70 items-center justify-center border-l border-slate-800 bg-slate-900">
@@ -204,7 +328,52 @@ const [creatingTask, setCreatingTask] = useState(false);
               {displayName}
             </h3>
 
-            <div className="mt-3">
+            {contact.lead_source && (
+  <div className="mt-2">
+    <span className="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-300 border border-slate-700">
+      Source: {contact.lead_source}
+    </span>
+  </div>
+)}
+
+<div className="mt-2">
+  <select
+    value={contact.lead_status || "new"}
+    disabled={updatingStatus}
+    onChange={(e) => updateLeadStatus(e.target.value)}
+    className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-white"
+  >
+    <option value="new">New</option>
+    <option value="contacted">Contacted</option>
+    <option value="interested">Interested</option>
+    <option value="booked">Booked</option>
+    <option value="completed">Completed</option>
+    <option value="lost">Lost</option>
+  </select>
+</div>
+
+      <div className="mt-3">
+  <select
+    value={contact.assigned_to || ""}
+    onChange={(e) => updateAssignedUser(e.target.value)}
+    className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-2 text-xs text-white"
+  >
+    <option value="">
+      Unassigned
+    </option>
+
+    {members.map((member) => (
+      <option
+        key={member.user_id}
+        value={member.user_id}
+      >
+        {member.full_name}
+      </option>
+    ))}
+  </select>
+</div>
+
+<div className="mt-3">
   <Button
     size="sm"
     onClick={() => setTaskDialogOpen(true)}
@@ -213,6 +382,17 @@ const [creatingTask, setCreatingTask] = useState(false);
     <Plus className="h-4 w-4 mr-1" />
     Create Task
   </Button>
+
+  <div className="mt-2">
+  <Button
+    size="sm"
+    variant="outline"
+    onClick={() => setDealOpen(true)}
+    className="w-full"
+  >
+    Create Deal
+  </Button>
+</div>
 </div>
 
             {contact.company && (
@@ -400,6 +580,21 @@ const [creatingTask, setCreatingTask] = useState(false);
           </div>
         </DialogContent>
       </Dialog>
+
+      {pipelines.length > 0 && stages.length > 0 && (
+  <DealForm
+    open={dealOpen}
+    onOpenChange={setDealOpen}
+    deal={null}
+    pipelineId={pipelines[0].id}
+    stages={stages}
+    defaultStageId={stages[0]?.id}
+    defaultContactId={contact?.id}
+    onSaved={() => {
+      toast.success("Deal created");
+    }}
+  />
+)}
 
     </div>
   );

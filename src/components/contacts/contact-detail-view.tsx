@@ -66,6 +66,13 @@ export function ContactDetailView({
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
   const [savingDetails, setSavingDetails] = useState(false);
+  const [editLeadSource, setEditLeadSource] = useState('');
+const [editLeadStatus, setEditLeadStatus] = useState('');
+const [editAssignedTo, setEditAssignedTo] = useState('');
+
+const [teamMembers, setTeamMembers] = useState<
+  { user_id: string; full_name: string }[]
+>([]);
 
   // Tags tab
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -103,14 +110,21 @@ const [creatingTask, setCreatingTask] = useState(false);
       .single();
 
     if (data) {
+      setEditLeadSource(data.lead_source ?? '');
+setEditLeadStatus(data.lead_status ?? '');
+setEditAssignedTo(data.assigned_to ?? '');
       setContact(data);
       setEditName(data.name ?? '');
       setEditPhone(data.phone);
       setEditEmail(data.email ?? '');
       setEditCompany(data.company ?? '');
-    }
-    setLoading(false);
-  }, [contactId, supabase]);
+
+      setEditLeadSource(data.lead_source ?? '');
+      setEditLeadStatus(data.lead_status ?? '');
+      setEditAssignedTo(data.assigned_to ?? '');
+      }
+      setLoading(false);
+      }, [contactId, supabase]);
 
   const fetchTags = useCallback(async () => {
     if (!contactId) return;
@@ -175,6 +189,15 @@ const [creatingTask, setCreatingTask] = useState(false);
     setLoadingDeals(false);
   }, [contactId, supabase]);
 
+  const fetchTeamMembers = useCallback(async () => {
+  const { data } = await supabase
+    .from('profiles')
+    .select('user_id, full_name')
+    .order('full_name');
+
+  setTeamMembers(data ?? []);
+}, [supabase]);
+
   useEffect(() => {
     if (open && contactId) {
       fetchContact();
@@ -182,6 +205,7 @@ const [creatingTask, setCreatingTask] = useState(false);
       fetchNotes();
       fetchCustomFields();
       fetchDeals();
+      fetchTeamMembers();
     }
   }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchDeals]);
 
@@ -206,6 +230,11 @@ const [creatingTask, setCreatingTask] = useState(false);
         phone: editPhone.trim(),
         email: editEmail.trim() || null,
         company: editCompany.trim() || null,
+
+        lead_source: editLeadSource.trim() || null,
+        lead_status: editLeadStatus.trim() || null,
+        assigned_to: editAssignedTo || null,
+
         updated_at: new Date().toISOString(),
       })
       .eq('id', contactId);
@@ -490,6 +519,56 @@ const [creatingTask, setCreatingTask] = useState(false);
                       className="bg-slate-800 border-slate-700 text-white h-8 text-sm"
                     />
                   </div>
+
+                  <div className="space-y-1.5">
+  <Label className="text-slate-400 text-xs">
+    Lead Source
+  </Label>
+
+  <Input
+    value={editLeadSource}
+    onChange={(e) => setEditLeadSource(e.target.value)}
+    placeholder="Facebook, Website, WhatsApp..."
+    className="bg-slate-800 border-slate-700 text-white h-8 text-sm"
+  />
+</div>
+
+<div className="space-y-1.5">
+  <Label className="text-slate-400 text-xs">
+    Lead Status
+  </Label>
+
+  <Input
+    value={editLeadStatus}
+    onChange={(e) => setEditLeadStatus(e.target.value)}
+    placeholder="new, contacted, qualified..."
+    className="bg-slate-800 border-slate-700 text-white h-8 text-sm"
+  />
+</div>
+
+<div className="space-y-1.5">
+  <Label className="text-slate-400 text-xs">
+    Assigned User
+  </Label>
+
+  <select
+    value={editAssignedTo}
+    onChange={(e) => setEditAssignedTo(e.target.value)}
+    className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+  >
+    <option value="">Unassigned</option>
+
+    {teamMembers.map((member) => (
+      <option
+        key={member.user_id}
+        value={member.user_id}
+      >
+        {member.full_name}
+      </option>
+    ))}
+  </select>
+</div>
+
                   <div className="space-y-1.5">
                     <Label className="text-slate-400 text-xs">
                       Phone <span className="text-red-400">*</span>

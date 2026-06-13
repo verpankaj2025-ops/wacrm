@@ -37,42 +37,66 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => null)
-  const { id } = await params
+
+  return NextResponse.json(
+    { error: 'Forbidden' },
+    { status: 403 }
+  )
+}
 
   const { data: profile } = await guard.supabase
-    .from('profiles')
-    .select('account_id')
-    .eq('user_id', guard.userId)
-    .single()
+  .from('profiles')
+  .select('account_id')
+  .eq('user_id', guard.userId)
+  .single()
 
-  const accountId = profile?.account_id
+const accountId = profile?.account_id
 
-  if (!accountId) {
-    return NextResponse.json(
-      { error: 'Your profile is not linked to an account.' },
-      { status: 403 }
-    )
-  }
+if (!accountId) {
+  return NextResponse.json(
+    {
+      error: 'Your profile is not linked to an account.',
+    },
+    {
+      status: 403,
+    }
+  )
+}
 
-  const { data: task } = await supabaseAdmin()
-    .from('tasks')
-    .select('id, account_id')
-    .eq('id', id)
-    .single()
+const { data: task } = await supabaseAdmin()
+  .from('tasks')
+  .select('id, account_id')
+  .eq('id', id)
+  .single()
 
-  if (!task) {
-    return NextResponse.json(
-      { error: 'Task not found' },
-      { status: 404 }
-    )
-  }
+if (!task) {
+  return NextResponse.json(
+    { error: 'Task not found' },
+    { status: 404 }
+  )
+}
 
-  if (task.account_id !== accountId) {
-    return NextResponse.json(
-      { error: 'Forbidden' },
-      { status: 403 }
-    )
-  }
+if (task.account_id !== accountId) {
+  return NextResponse.json(
+    { error: 'Forbidden' },
+    { status: 403 }
+  )
+}
+
+const { id } = await params
+
+  return NextResponse.json(
+    { error: 'Forbidden' },
+    { status: 403 }
+  )
+ }
+
+ {
+  return NextResponse.json(
+    { error: 'Forbidden' },
+    { status: 403 }
+  )
+}
 
   const updateData: Record<string, unknown> = {}
 
@@ -131,41 +155,25 @@ export async function DELETE(
     })
   }
 
-  const { id } = await params
-
-  const { data: profile } = await guard.supabase
-    .from('profiles')
-    .select('account_id')
-    .eq('user_id', guard.userId)
-    .single()
-
-  const accountId = profile?.account_id
-
-  if (!accountId) {
-    return NextResponse.json(
-      { error: 'Your profile is not linked to an account.' },
-      { status: 403 }
-    )
-  }
-
-  const { data: task } = await supabaseAdmin()
-    .from('tasks')
-    .select('id, account_id')
-    .eq('id', id)
-    .single()
-
-  if (!task) {
-    return NextResponse.json(
-      { error: 'Task not found' },
-      { status: 404 }
-    )
-  }
-
-  if (task.account_id !== accountId) {
-    return NextResponse.json(
-      { error: 'Forbidden' },
-      { status: 403 }
-    )
+  const { id } = await params 
+  
+  const { data: task } = await supabaseAdmin() 
+  .from('tasks') 
+  .select('id, account_id') 
+  .eq('id', id) 
+  .single() 
+  if (!task) { 
+    return NextResponse.json( 
+      { error: 'Task not found' }, 
+      { status: 404 } 
+    ) 
+  } 
+  
+  if (task.account_id !== accountId) 
+    { return NextResponse.json( 
+      { error: 'Forbidden' }, 
+      { status: 403 } 
+    ) 
   }
 
   const { error } = await supabaseAdmin()

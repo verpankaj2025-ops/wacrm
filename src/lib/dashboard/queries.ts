@@ -42,6 +42,10 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
     openDeals,
     messagesToday,
     messagesYesterday,
+    totalLeads,
+    assignedLeads,
+    dueTodayTasks,
+
   ] = await Promise.all([
     db.from('conversations').select('id', { count: 'exact', head: true }).eq('status', 'open'),
     db
@@ -73,6 +77,18 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .eq('sender_type', 'agent')
       .gte('created_at', yesterdayStart)
       .lt('created_at', todayStart),
+      db.from('contacts').select('id', { count: 'exact', head: true }),
+
+db
+  .from('contacts')
+  .select('id', { count: 'exact', head: true })
+  .not('assigned_to', 'is', null),
+
+db
+  .from('tasks')
+  .select('id', { count: 'exact', head: true })
+  .neq('status', 'completed')
+  .gte('due_at', todayStart),
   ])
 
   const openDealsRows = (openDeals.data ?? []) as { value: number | null }[]
@@ -92,6 +108,9 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
     },
     openDealsValue,
     openDealsCount: openDealsRows.length,
+    totalLeads: totalLeads.count ?? 0,
+    assignedLeads: assignedLeads.count ?? 0,
+    dueTodayTasks: dueTodayTasks.count ?? 0,
     messagesSentToday: {
       current: messagesToday.count ?? 0,
       previous: messagesYesterday.count ?? 0,
@@ -168,6 +187,67 @@ export async function loadPipelineDonut(db: DB): Promise<PipelineDonutData> {
 }
 
 // --- 4. Response time by day of week ----------------------------------
+
+export async function loadTeamPerformance(db: DB) {
+  const [profilesRes, contactsRes, dealsRes, tasksRes] =
+    await Promise.all([
+      db.from('profiles').select('user_id, full_name'),
+
+      db
+        .from('contacts')
+        .select('assigned_to')
+        .not('assigned_to', 'is', null),
+
+      db
+        .from('deals')
+        .select('assigned_to')
+        .eq('status', 'open')
+        .not('assigned_to', 'is', null),
+
+      db
+        .from('tasks')
+        .select('assigned_to')
+        .neq('status', 'completed')
+        .not('assigned_to', 'is', null),
+    ])
+
+  const profiles =
+    (profilesRes.data ?? []) as {
+      user_id: string
+      full_name: string
+    }[]
+
+  const members = profiles.map((p) => ({
+    userId: p.user_id,
+    fullName: p.full_name,
+    assignedLeads: 0,
+    openDeals: 0,
+    openTasks: 0,
+  }))
+
+  const map = new Map(
+    members.map((m) => [m.userId, m])
+  )
+
+  ;(contactsRes.data ?? []).forEach((c: any) => {
+    const member = map.get(c.assigned_to)
+    if (member) member.assignedLeads++
+  })
+
+  ;(dealsRes.data ?? []).forEach((d: any) => {
+    const member = map.get(d.assigned_to)
+    if (member) member.openDeals++
+  })
+
+  ;(tasksRes.data ?? []).forEach((t: any) => {
+    const member = map.get(t.assigned_to)
+    if (member) member.openTasks++
+  })
+
+  return {
+    members,
+  }
+}
 
 export async function loadResponseTime(db: DB): Promise<ResponseTimeSummary> {
   // Pull the last 14 days of messages in one shot, then walk per

@@ -13,6 +13,10 @@ export interface MetricsBundle {
   openDealsValue: number
   openDealsCount: number
   messagesSentToday: MetricDelta
+
+  totalLeads: number
+  assignedLeads: number
+  dueTodayTasks: number
 }
 
 export interface ConversationsSeriesPoint {
@@ -54,6 +58,19 @@ export type ActivityKind =
   | 'broadcast'
   | 'automation'
   | 'contact'
+
+  export interface TeamPerformanceItem {
+  userId: string
+  fullName: string
+
+  assignedLeads: number
+  openDeals: number
+  openTasks: number
+}
+
+export interface TeamPerformanceSummary {
+  members: TeamPerformanceItem[]
+}
 
 export interface ActivityItem {
   id: string

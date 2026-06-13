@@ -25,6 +25,19 @@ export async function GET(request: Request) {
   }
 
   const admin = supabaseAdmin()
+
+  const staleCutoff = new Date(
+  Date.now() - 15 * 60 * 1000,
+).toISOString()
+
+await admin
+  .from('automation_pending_executions')
+  .update({
+    status: 'pending',
+  })
+  .eq('status', 'running')
+  .lt('started_at', staleCutoff)
+
   const { data: due, error } = await admin
     .from('automation_pending_executions')
     .select('*')
@@ -40,7 +53,10 @@ export async function GET(request: Request) {
   for (const row of due) {
     const { data: claim } = await admin
       .from('automation_pending_executions')
-      .update({ status: 'running' })
+      .update({
+         status: 'running',
+         started_at: new Date().toISOString(), 
+       })
       .eq('id', row.id)
       .eq('status', 'pending')
       .select('id')

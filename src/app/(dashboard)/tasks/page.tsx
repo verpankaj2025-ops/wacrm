@@ -135,9 +135,9 @@ priority,
 due_at: dueAt || null,
 
   assigned_to:
-    editAssignedTo && editAssignedTo !== 'unassigned'
-      ? editAssignedTo
-      : null,
+  assignedTo && assignedTo !== 'unassigned'
+    ? assignedTo
+    : null
 }),
     });
 
@@ -249,9 +249,9 @@ priority: editPriority,
 due_at: editDueAt || null,
 
   assigned_to:
-    assignedTo && assignedTo !== 'unassigned'
-      ? assignedTo
-      : null,
+  editAssignedTo && editAssignedTo !== 'unassigned'
+    ? editAssignedTo
+    : null
 }),
       }
     );
@@ -348,10 +348,12 @@ return ( <div className="space-y-6"> <div className="flex flex-col gap-4 sm:flex
   <Label>Assign To</Label>
 
   <Select
-    value={assignedTo}
+    value={editAssignedTo}
     onValueChange={(value) =>
-  setAssignedTo((value ?? 'unassigned') as string)
-}
+      setEditAssignedTo(
+        (value ?? 'unassigned') as string
+      )
+    }
   >
     <SelectTrigger>
       <SelectValue placeholder="Select team member" />
@@ -373,87 +375,6 @@ return ( <div className="space-y-6"> <div className="flex flex-col gap-4 sm:flex
     </SelectContent>
   </Select>
 </div>
-      
-
-      <Button
-        onClick={handleCreateTask}
-        disabled={saving || !title.trim()}
-    >
-        {saving ? 'Saving...' : 'Save Task'}
-      </Button>
-    </div>
-  </DialogContent>
-</Dialog>
-
-<Dialog open={editOpen} onOpenChange={setEditOpen}>
-  <DialogContent>
-    <DialogHeader>
-      <DialogTitle>Edit Task</DialogTitle>
-    </DialogHeader>
-
-    <div className="space-y-4">
-      <div>
-        <Label>Title</Label>
-
-        <Input
-          value={editTitle}
-          onChange={(e) =>
-            setEditTitle(e.target.value)
-          }
-        />
-      </div>
-
-      <div>
-        <Label>Description</Label>
-
-        <Textarea
-          value={editDescription}
-          onChange={(e) =>
-            setEditDescription(e.target.value)
-          }
-        />
-      </div>
-
-      <div>
-        <Label>Priority</Label>
-
-        <Select
-          value={editPriority}
-          onValueChange={(value) => {
-            if (value) setEditPriority(value);
-          }}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-
-          <SelectContent>
-            <SelectItem value="low">
-              Low
-            </SelectItem>
-
-            <SelectItem value="medium">
-              Medium
-            </SelectItem>
-
-            <SelectItem value="high">
-              High
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div>
-        <Label>Due Date</Label>
-
-        <Input
-          type="date"
-          value={editDueAt}
-          onChange={(e) =>
-            setEditDueAt(e.target.value)
-          }
-        />
-      </div>
 
       <Button onClick={handleUpdateTask}>
         Save Changes

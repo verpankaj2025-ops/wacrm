@@ -15,6 +15,10 @@ import type {
   AssignConversationStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
+import {
+  checkRateLimit,
+  RATE_LIMITS,
+} from '@/lib/rate-limit'
 import { engineSendText, engineSendTemplate } from './meta-send'
 
 // ------------------------------------------------------------
@@ -55,6 +59,21 @@ export interface DispatchInput {
  * recorded into automation_logs with status='failed'.
  */
 export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
+
+  const limit = checkRateLimit(
+  `automation:${input.accountId}`,
+  RATE_LIMITS.automationDispatch
+)
+
+if (!limit.success) {
+  console.warn(
+    '[automations] rate limit exceeded',
+    input.accountId
+  )
+
+  return
+}
+
   try {
     const db = supabaseAdmin()
 
@@ -129,9 +148,15 @@ export async function resumePendingExecution(pending: {
   context: AutomationContext
 }): Promise<void> {
   const db = supabaseAdmin()
+
+  const { data: pendingRow } = await db
+    .from('automation_pending_executions')
+    .select('attempt_count, max_attempts')
+    .eq('id', pending.id)
+    .single()
+
   const { data: automation, error } = await db
-    .from('automations')
-    .select('*')
+    .from('automations')    .select('*')
     .eq('id', pending.automation_id)
     .single()
 
@@ -150,13 +175,33 @@ export async function resumePendingExecution(pending: {
       branch: pending.branch,
       startPosition: pending.next_step_position,
       logId: pending.log_id,
+      startedAt: Date.now(),
+      depth: 0,
       triggerEvent: 'resumed_wait',
     })
     await markPending(pending.id, 'done')
   } catch (err) {
-    console.error('[automations] resume failed:', err)
+  console.error('[automations] resume failed:', err)
+
+  const message =
+    err instanceof Error ? err.message : String(err)
+
+  const nextAttempt =
+    (pendingRow?.attempt_count ?? 0) + 1
+
+  const maxAttempts =
+    pendingRow?.max_attempts ?? 5
+
+  if (nextAttempt >= maxAttempts) {
     await markPending(pending.id, 'failed')
+  } else {
+    await scheduleRetry(
+      pending.id,
+      nextAttempt,
+      message,
+    )
   }
+}
 }
 
 // ------------------------------------------------------------
@@ -197,6 +242,8 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
     branch: null,
     startPosition: 0,
     logId: log.id,
+    startedAt: Date.now(),
+    depth: 0,
     triggerEvent: input.triggerType,
   })
 
@@ -221,10 +268,36 @@ interface ExecuteArgs {
   startPosition: number
   logId: string | null
   triggerEvent: string
+  startedAt: number
+  depth: number
 }
+
+const MAX_STEPS_PER_RUN = 100
+const MAX_EXECUTION_TIME_MS = 30_000
+const MAX_BRANCH_DEPTH = 10
 
 async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   const db = supabaseAdmin()
+
+  if (args.depth > MAX_BRANCH_DEPTH) {
+  await finalizeLog(
+    args.logId,
+    'failed',
+    `Maximum automation depth exceeded (${MAX_BRANCH_DEPTH})`
+  )
+
+  return
+}
+
+  if (Date.now() - args.startedAt > MAX_EXECUTION_TIME_MS) {
+  await finalizeLog(
+    args.logId,
+    'failed',
+    `Automation exceeded runtime limit (${MAX_EXECUTION_TIME_MS}ms)`
+  )
+
+  return
+}
 
   const baseQuery = db
     .from('automation_steps')
@@ -250,6 +323,16 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
     }
     return
   }
+
+  if (steps.length > MAX_STEPS_PER_RUN) {
+  await finalizeLog(
+    args.logId,
+    'failed',
+    `Automation exceeded step limit (${MAX_STEPS_PER_RUN})`
+  )
+
+  return
+}
 
   const results: AutomationLogStepResult[] = []
   let status: 'success' | 'partial' | 'failed' = 'success'
@@ -304,7 +387,8 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
           branch: taken ? 'yes' : 'no',
           startPosition: 0,
           logId: args.logId,
-        })
+          depth: args.depth + 1,
+       })
         continue
       }
 
@@ -662,36 +746,49 @@ function interpolate(s: string, args: ExecuteArgs): string {
     if (ns === 'message' && prop === 'text') return String(args.context.message_text ?? '')
     if (ns === 'vars' && prop) return String(args.context.vars?.[prop] ?? '')
     return ''
-  })
-}
+    })
+   } 
 
-async function appendResults(
+   async function appendResults(
   logId: string | null,
   newItems: AutomationLogStepResult[],
   status: 'success' | 'partial' | 'failed' | null,
   errorMessage: string | null,
 ) {
   if (!logId) return
+
   const db = supabaseAdmin()
+
   const { data: existing } = await db
     .from('automation_logs')
     .select('steps_executed, status')
     .eq('id', logId)
     .single()
+
   const merged = [
     ...((existing?.steps_executed as AutomationLogStepResult[] | undefined) ?? []),
     ...newItems,
   ]
-  const update: Record<string, unknown> = { steps_executed: merged }
-  // Only overwrite status on the outermost scope — nested branches pass null.
+
+  const update: Record<string, unknown> = {
+    steps_executed: merged,
+  }
+
   if (status !== null) {
     update.status = status
   }
-  if (errorMessage) update.error_message = errorMessage
-  await db.from('automation_logs').update(update).eq('id', logId)
-}
 
-async function finalizeLog(
+  if (errorMessage) {
+    update.error_message = errorMessage
+  }
+
+  await db
+    .from('automation_logs')
+    .update(update)
+    .eq('id', logId)
+   }
+
+  async function finalizeLog(
   logId: string | null,
   status: 'success' | 'partial' | 'failed',
   errorMessage: string | null,
@@ -701,6 +798,33 @@ async function finalizeLog(
     .from('automation_logs')
     .update({ status, error_message: errorMessage })
     .eq('id', logId)
+}
+
+function getRetryDelayMinutes(attempt: number): number {
+  const delays = [1, 5, 15, 60, 360]
+
+  return delays[Math.min(attempt - 1, delays.length - 1)]
+}
+
+async function scheduleRetry(
+  id: string,
+  attemptCount: number,
+  errorMessage: string,
+) {
+  const delayMinutes = getRetryDelayMinutes(attemptCount)
+
+  await supabaseAdmin()
+    .from('automation_pending_executions')
+    .update({
+      status: 'pending',
+      attempt_count: attemptCount,
+      last_error: errorMessage,
+      failed_at: new Date().toISOString(),
+      run_at: new Date(
+        Date.now() + delayMinutes * 60 * 1000,
+      ).toISOString(),
+    })
+    .eq('id', id)
 }
 
 async function markPending(id: string, status: 'done' | 'failed') {

@@ -7,6 +7,9 @@ import {
   UserPlus,
   DollarSign,
   Send,
+  Users,
+  CheckCircle,
+  CalendarDays,
 } from 'lucide-react'
 
 import {
@@ -15,6 +18,7 @@ import {
   loadMetrics,
   loadPipelineDonut,
   loadResponseTime,
+  loadTeamPerformance,
 } from '@/lib/dashboard/queries'
 import type {
   ActivityItem,
@@ -31,6 +35,8 @@ import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
 import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
+import { TeamPerformanceCard } from '@/components/dashboard/team-performance-card'
+import { LeadFunnelCard } from '@/components/dashboard/lead-funnel-card'
 
 type RangeDays = 7 | 30 | 90
 
@@ -57,35 +63,10 @@ export default function DashboardPage() {
 
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
-  const [dueTodayCount, setDueTodayCount] = useState(0)
+  const [teamData, setTeamData] = useState<any>(null)
 
   const loadAll = useCallback(() => {
     const db = createClient()
-    const today = new Date()
-today.setHours(0, 0, 0, 0)
-
-const tomorrow = new Date(today)
-tomorrow.setDate(tomorrow.getDate() + 1)
-
-void (async () => {
-  try {
-    const { data, error } = await db
-      .from('tasks')
-      .select('id')
-      .gte('due_at', today.toISOString())
-      .lt('due_at', tomorrow.toISOString())
-      .neq('status', 'completed')
-
-    if (error) {
-      console.error('[dashboard] due today failed:', error)
-      return
-    }
-
-    setDueTodayCount(data?.length ?? 0)
-  } catch (err) {
-    console.error('[dashboard] due today failed:', err)
-  }
-})()
 
     // Kick everything off in parallel. Each block has its own
     // setState + finally so a slow query doesn't hold up faster
@@ -113,11 +94,17 @@ void (async () => {
     // Fetch up to 50 so the biggest page-size option in the feed
     // (50 rows) is already in memory — switching sizes then becomes
     // a pure client-side slice with no extra round trip.
+    
     void loadActivity(db, 50)
-      .then((a) => setActivity(a))
-      .catch((err) => console.error('[dashboard] activity failed:', err))
-      .finally(() => setActivityLoading(false))
-  }, [])
+  .then((a) => setActivity(a))
+  .catch((err) => console.error('[dashboard] activity failed:', err))
+  .finally(() => setActivityLoading(false))
+
+void loadTeamPerformance(db)
+  .then((t) => setTeamData(t))
+  .catch((err) => console.error('[dashboard] team failed:', err))
+
+}, [])
 
   useEffect(() => {
     loadAll()
@@ -154,7 +141,7 @@ void (async () => {
       {/* Metric cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {metricsLoading || !metrics ? (
-          Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+          Array.from({ length: 7 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
           <>
             <MetricCard
@@ -198,12 +185,36 @@ void (async () => {
                 ),
               }}
             />
+            <MetricCard
+           title="Total Leads"
+           value={metrics.totalLeads.toLocaleString()}
+           icon={Users}
+         />
+
+          <MetricCard
+            title="Assigned Leads"
+            value={metrics.assignedLeads.toLocaleString()}
+            icon={CheckCircle}
+           />
+
+          <MetricCard
+           title="Due Today Tasks"
+           value={metrics.dueTodayTasks.toLocaleString()}
+           icon={CalendarDays}
+         />
           </>
         )}
       </div>
 
       {/* Quick actions */}
       <QuickActions />
+
+    {metrics && (
+        <LeadFunnelCard
+          totalLeads={metrics.totalLeads}
+          assignedLeads={metrics.assignedLeads}
+        />
+      )}
 
       {/* Charts row */}
       {/* items-stretch (the grid default) stretches the two columns to
@@ -227,7 +238,15 @@ void (async () => {
       </div>
 
       {/* Response time */}
-      <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
+      <ResponseTimeChart 
+        data={responseTime}
+        loading={responseTimeLoading} />
+
+      {teamData && (
+        <TeamPerformanceCard
+         members={teamData.members}
+       />
+       )}
 
       {/* Activity feed */}
       <ActivityFeed items={activity} loading={activityLoading} />

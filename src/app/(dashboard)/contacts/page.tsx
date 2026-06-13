@@ -53,6 +53,11 @@ interface ContactWithTags extends Contact {
   tags?: Tag[];
 }
 
+type ProfileLite = {
+  user_id: string;
+  full_name: string;
+};
+
 export default function ContactsPage() {
   const supabase = createClient();
   const canEdit = useCan('send-messages');
@@ -60,37 +65,46 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
+  const [leadFilter, setLeadFilter] = useState<
+  'all' | 'assigned' | 'unassigned'
+>('all');
+
+const [statusFilter, setStatusFilter] = useState('all');
+const [sourceFilter, setSourceFilter] = useState('all');
+
+const [page, setPage] = useState(0);
+const [totalCount, setTotalCount] = useState(0);
 
   // Modals
-  const [formOpen, setFormOpen] = useState(false);
-  const [editContact, setEditContact] = useState<Contact | null>(null);
-  const [editContactTags, setEditContactTags] = useState<ContactTag[]>([]);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [detailContactId, setDetailContactId] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
-  const [deleting, setDeleting] = useState(false);
+const [formOpen, setFormOpen] = useState(false);
+const [editContact, setEditContact] = useState<Contact | null>(null);
+const [editContactTags, setEditContactTags] = useState<ContactTag[]>([]);
+const [detailOpen, setDetailOpen] = useState(false);
+const [detailContactId, setDetailContactId] = useState<string | null>(null);
+const [importOpen, setImportOpen] = useState(false);
+const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
+const [deleting, setDeleting] = useState(false);
 
   // All tags for display
-  const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
+const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
 
-  const fetchTags = useCallback(async () => {
-    const { data } = await supabase.from('tags').select('*');
+const [profiles, setProfiles] = useState<ProfileLite[]>([]);
+
+const fetchTags = useCallback(async () => {
+const { data } = await supabase.from('tags').select('*');
     if (data) {
-      const map: Record<string, Tag> = {};
-      data.forEach((t) => (map[t.id] = t));
+const map: Record<string, Tag> = {};
+    data.forEach((t) => (map[t.id] = t));
       setTagsMap(map);
     }
   }, [supabase]);
 
-  const fetchContacts = useCallback(async () => {
+const fetchContacts = useCallback(async () => {
     setLoading(true);
 
-    const from = page * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+const from = page * PAGE_SIZE;
+const to = from + PAGE_SIZE - 1;
 
     let query = supabase
       .from('contacts')
@@ -103,7 +117,23 @@ export default function ContactsPage() {
       query = query.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
     }
 
-    const { data, count, error } = await query;
+if (leadFilter === 'assigned') {
+  query = query.not('assigned_to', 'is', null);
+}
+
+if (leadFilter === 'unassigned') {
+  query = query.is('assigned_to', null);
+}
+
+if (statusFilter !== 'all') {
+  query = query.eq('lead_status', statusFilter);
+}
+
+if (sourceFilter !== 'all') {
+  query = query.eq('lead_source', sourceFilter);
+}
+
+const { data, count, error } = await query;
 
     if (error) {
       toast.error('Failed to load contacts');
@@ -141,7 +171,15 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, tagsMap]);
+  }, [
+  supabase,
+  page,
+  search,
+  tagsMap,
+  leadFilter,
+  statusFilter,
+  sourceFilter,
+]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -156,6 +194,17 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
+
+  useEffect(() => {
+  (async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('user_id, full_name')
+      .order('full_name');
+
+    setProfiles((data ?? []) as ProfileLite[]);
+  })();
+}, [supabase]);
 
   function openAddForm() {
     setEditContact(null);
@@ -208,6 +257,16 @@ export default function ContactsPage() {
   const hasNext = page < totalPages - 1;
   const hasPrev = page > 0;
 
+  function getAssignedName(userId?: string | null) {
+  if (!userId) return 'Unassigned';
+
+  const profile = profiles.find(
+    (p) => p.user_id === userId
+  );
+
+  return profile?.full_name || 'Unknown User';
+}
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -240,6 +299,75 @@ export default function ContactsPage() {
           </GatedButton>
         </div>
       </div>
+
+      <div className="flex gap-2 flex-wrap">
+     <Button
+     size="sm"
+     variant={leadFilter === 'all' ? 'default' : 'outline'}
+     onClick={() => {
+      setPage(0);
+      setLeadFilter('all');
+    }}
+  >
+    All Leads
+  </Button>
+
+  <Button
+    size="sm"
+    variant={leadFilter === 'assigned' ? 'default' : 'outline'}
+    onClick={() => {
+      setPage(0);
+      setLeadFilter('assigned');
+    }}
+  >
+    Assigned
+  </Button>
+
+  <Button
+    size="sm"
+    variant={leadFilter === 'unassigned' ? 'default' : 'outline'}
+    onClick={() => {
+      setPage(0);
+      setLeadFilter('unassigned');
+    }}
+  >
+    Unassigned
+  </Button>
+</div>
+
+<div className="flex gap-2 flex-wrap">
+  <select
+    value={statusFilter}
+    onChange={(e) => {
+      setStatusFilter(e.target.value);
+      setPage(0);
+    }}
+    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+  >
+    <option value="all">All Status</option>
+    <option value="new">New</option>
+    <option value="contacted">Contacted</option>
+    <option value="interested">Interested</option>
+    <option value="booked">Booked</option>
+    <option value="completed">Completed</option>
+    <option value="lost">Lost</option>
+  </select>
+
+  <select
+    value={sourceFilter}
+    onChange={(e) => {
+      setSourceFilter(e.target.value);
+      setPage(0);
+    }}
+    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+  >
+    <option value="all">All Sources</option>
+    <option value="whatsapp">WhatsApp</option>
+    <option value="facebook">Facebook</option>
+    <option value="website">Website</option>
+    <option value="manual">Manual</option>
+  </select>
+</div>
 
       {/* Search */}
       <div className="relative max-w-sm">
@@ -274,6 +402,11 @@ export default function ContactsPage() {
               <TableHead className="text-slate-400 hidden lg:table-cell">
                  Source
               </TableHead>
+
+              <TableHead className="text-slate-400 hidden lg:table-cell">
+   Assigned To
+</TableHead>
+
               <TableHead className="text-slate-400 hidden lg:table-cell">Created</TableHead>
               <TableHead className="text-slate-400 w-12" />
             </TableRow>
@@ -363,6 +496,18 @@ export default function ContactsPage() {
 
                    <TableCell className="hidden lg:table-cell">
                       <span className="text-xs text-slate-400">
+                         {contact.lead_source || '-'}
+                      </span>
+                    </TableCell>
+
+                   <TableCell className="hidden lg:table-cell">
+                      <span className="text-xs text-slate-400">
+                          {getAssignedName(contact.assigned_to)}
+                      </span>
+                   </TableCell>
+
+                   <TableCell className="hidden lg:table-cell">
+                       <span className="text-xs text-slate-400">
                          {contact.lead_source || 'whatsapp'}
                       </span>
                     </TableCell>

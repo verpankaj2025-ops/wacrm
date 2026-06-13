@@ -227,6 +227,7 @@ function ConversationItem({
 }: ConversationItemProps) {
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || "Unknown";
+  const leadSource = contact?.lead_source ?? "whatsapp";
   const initials = displayName.charAt(0).toUpperCase();
 
   const handleClick = useCallback(() => {
@@ -263,9 +264,15 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-white">
-            {displayName}
-          </span>
+          <div className="min-w-0 flex-1">
+  <span className="truncate text-sm font-medium text-white block">
+    {displayName}
+  </span>
+
+  <span className="text-[10px] uppercase text-slate-500">
+    {leadSource}
+  </span>
+</div>
           <span className="shrink-0 text-[10px] text-slate-500">{timeAgo}</span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">

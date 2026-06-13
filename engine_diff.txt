@@ -1,0 +1,120 @@
+diff --git a/src/lib/automations/engine.ts b/src/lib/automations/engine.ts
+index 8dacfa9..c114201 100644
+--- a/src/lib/automations/engine.ts
++++ b/src/lib/automations/engine.ts
+@@ -15,6 +15,10 @@ import type {
+   AssignConversationStepConfig,
+ } from '@/types'
+ import { supabaseAdmin } from './admin-client'
++import {
++  checkRateLimit,
++  RATE_LIMITS,
++} from '@/lib/rate-limit'
+ import { engineSendText, engineSendTemplate } from './meta-send'
+ 
+ // ------------------------------------------------------------
+@@ -55,6 +59,21 @@ export interface DispatchInput {
+  * recorded into automation_logs with status='failed'.
+  */
+ export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
++
++  const limit = checkRateLimit(
++  `automation:${input.accountId}`,
++  RATE_LIMITS.automationDispatch
++)
++
++if (!limit.success) {
++  console.warn(
++    '[automations] rate limit exceeded',
++    input.accountId
++  )
++
++  return
++}
++
+   try {
+     const db = supabaseAdmin()
+ 
+@@ -150,6 +169,8 @@ export async function resumePendingExecution(pending: {
+       branch: pending.branch,
+       startPosition: pending.next_step_position,
+       logId: pending.log_id,
++      startedAt: Date.now(),
++      depth: 0,
+       triggerEvent: 'resumed_wait',
+     })
+     await markPending(pending.id, 'done')
+@@ -197,6 +218,8 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
+     branch: null,
+     startPosition: 0,
+     logId: log.id,
++    startedAt: Date.now(),
++    depth: 0,
+     triggerEvent: input.triggerType,
+   })
+ 
+@@ -221,11 +244,37 @@ interface ExecuteArgs {
+   startPosition: number
+   logId: string | null
+   triggerEvent: string
++  startedAt: number
++  depth: number
+ }
+ 
++const MAX_STEPS_PER_RUN = 100
++const MAX_EXECUTION_TIME_MS = 30_000
++const MAX_BRANCH_DEPTH = 10
++
+ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
+   const db = supabaseAdmin()
+ 
++  if (args.depth > MAX_BRANCH_DEPTH) {
++  await finalizeLog(
++    args.logId,
++    'failed',
++    `Maximum automation depth exceeded (${MAX_BRANCH_DEPTH})`
++  )
++
++  return
++}
++
++  if (Date.now() - args.startedAt > MAX_EXECUTION_TIME_MS) {
++  await finalizeLog(
++    args.logId,
++    'failed',
++    `Automation exceeded runtime limit (${MAX_EXECUTION_TIME_MS}ms)`
++  )
++
++  return
++}
++
+   const baseQuery = db
+     .from('automation_steps')
+     .select('*')
+@@ -251,6 +300,16 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
+     return
+   }
+ 
++  if (steps.length > MAX_STEPS_PER_RUN) {
++  await finalizeLog(
++    args.logId,
++    'failed',
++    `Automation exceeded step limit (${MAX_STEPS_PER_RUN})`
++  )
++
++  return
++}
++
+   const results: AutomationLogStepResult[] = []
+   let status: 'success' | 'partial' | 'failed' = 'success'
+   let errorMessage: string | null = null
+@@ -304,7 +363,8 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
+           branch: taken ? 'yes' : 'no',
+           startPosition: 0,
+           logId: args.logId,
+-        })
++          depth: args.depth + 1,
++       })
+         continue
+       }
+ 
