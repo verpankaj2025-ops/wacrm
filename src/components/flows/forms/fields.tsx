@@ -46,11 +46,11 @@ export function TextRow({
       <label className="mb-1 block text-xs text-slate-400">{label}</label>
       {rows > 1 ? (
         <Textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          rows={rows}
-          className="bg-slate-800"
-        />
+  value={value}
+  onChange={(e) => onChange(e.target.value)}
+  rows={rows}
+  className="min-h-[180px] resize-y bg-slate-800"
+/>
       ) : (
         <Input
           value={value}

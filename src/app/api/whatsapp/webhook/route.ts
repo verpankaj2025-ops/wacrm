@@ -7,6 +7,9 @@ import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { routeToAI } from '@/lib/ai/router'
+import { processAIIntent } from '@/lib/ai/crm-actions'
+import { engineSendText } from '@/lib/automations/meta-send'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -708,13 +711,73 @@ if (convError) {
     isFirstInboundMessage,
   })
   const flowConsumed = flowResult.consumed
+  
+  const inboundText = contentText ?? message.text?.body ?? ''
 
+  console.log(
+  "[AI DEBUG]",
+  {
+    flowConsumed,
+    inboundText,
+  }
+)
+
+  if (!flowConsumed && inboundText.trim()) {
+  try {
+    const aiResult = await routeToAI(inboundText)
+
+    await processAIIntent({
+      intent: aiResult.intent,
+      contactId: contactRecord.id,
+      conversationId: conversation.id,
+      accountId,
+      userId: configOwnerUserId,
+    })
+
+    if (!aiResult.handoff) {
+      await engineSendText({
+        accountId,
+        userId: configOwnerUserId,
+        conversationId: conversation.id,
+        contactId: contactRecord.id,
+        text: aiResult.reply,
+      })
+    }
+  } catch (error) {
+  console.error('[AI ERROR]', error)
+
+  await supabaseAdmin()
+  .from('tasks')
+  .insert({
+    account_id: accountId,
+    created_by: configOwnerUserId,
+    contact_id: contactRecord.id,
+    conversation_id: conversation.id,
+    title: 'AI Failure',
+    description:
+      error instanceof Error
+        ? error.message
+        : 'Unknown AI error',
+    priority: 'high',
+    status: 'pending',
+  })
+
+  await engineSendText({
+    accountId,
+    userId: configOwnerUserId,
+    conversationId: conversation.id,
+    contactId: contactRecord.id,
+    text:
+      'Dhanyavaad 😊 Aapka message mil gaya hai. Hamari team aapse jaldi connect karegi.',
+  })
+}
+}
   // Fire any automations that react to this webhook event. All dispatches
   // run here (not earlier) so the contact, conversation, and inbound
   // message all exist before any step — including send_message — runs.
   // Fire-and-forget: a slow or failing automation must not block the
   // webhook's 200 OK response to Meta.
-  const inboundText = contentText ?? message.text?.body ?? ''
+  
   const automationTriggers: (
     | 'new_contact_created'
     | 'first_inbound_message'

@@ -94,8 +94,14 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
 
   const accessToken = decrypt(config.access_token)
 
-  const attempt = async (phone: string): Promise<string> => {
+  const attempt = async (
+  phone: string,
+): Promise<string> => {
+
+  try {
+
     if (input.kind === 'template') {
+
       const r = await sendTemplateMessage({
         phoneNumberId: config.phone_number_id,
         accessToken,
@@ -104,16 +110,43 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         language: input.language,
         params: input.params,
       })
+
       return r.messageId
     }
+
     const r = await sendTextMessage({
       phoneNumberId: config.phone_number_id,
       accessToken,
       to: phone,
       text: input.text,
     })
+
     return r.messageId
+
+  } catch (error) {
+
+    console.error(
+      '[META SEND ERROR]',
+      error,
+    )
+
+    await db.from('tasks').insert({
+      account_id: input.accountId,
+      created_by: input.userId,
+      contact_id: input.contactId,
+      conversation_id: input.conversationId,
+      title: 'WhatsApp Send Failed',
+      priority: 'high',
+      status: 'pending',
+      description:
+        error instanceof Error
+          ? error.message
+          : String(error),
+    })
+
+    throw error
   }
+}
 
   // Same phone-variant retry as /api/whatsapp/send — Meta sandbox and
   // numbers registered with/without a trunk 0 both require this to

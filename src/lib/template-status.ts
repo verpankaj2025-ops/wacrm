@@ -9,14 +9,14 @@
 
 import type { MessageTemplateStatus } from '@/types';
 
-export interface TemplateStatusDisplay {
+export interface TemplateStatINRisplay {
   label: string;
   classes: string;
 }
 
 export const templateStatusConfig: Record<
   MessageTemplateStatus,
-  TemplateStatusDisplay
+  TemplateStatINRisplay
 > = {
   DRAFT: {
     label: 'Draft',

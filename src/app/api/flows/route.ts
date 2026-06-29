@@ -29,19 +29,47 @@ async function requireUser(): Promise<
 
 export async function GET() {
   const guard = await requireUser()
+
   if (!guard.ok) {
-    return NextResponse.json(guard.body, { status: guard.status })
+    return NextResponse.json(
+      guard.body,
+      { status: guard.status }
+    )
   }
+
   const { supabase } = guard
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('account_id')
+    .eq('user_id', guard.userId)
+    .single()
+
+  const accountId = profile?.account_id
+
+  if (!accountId) {
+    return NextResponse.json(
+      { error: 'Your profile is not linked to an account.' },
+      { status: 403 }
+    )
+  }
 
   const { data, error } = await supabase
     .from('flows')
     .select('*')
+    .eq('account_id', accountId)
     .order('created_at', { ascending: false })
+
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    )
   }
-  return NextResponse.json({ flows: data ?? [] })
+
+  return NextResponse.json({
+    flows: data ?? [],
+  })
 }
 
 export async function POST(request: Request) {

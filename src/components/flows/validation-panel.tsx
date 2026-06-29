@@ -17,13 +17,21 @@
  * concept). User can switch to List to address them.
  */
 
-import { CircleAlert, CircleCheck } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ValidationIssue } from "@/lib/flows/validate";
 import { useFlowEditor } from "./flow-editor-state";
+import { useState } from "react";
 
 export function ValidationPanel() {
   const { issues, requestFlash } = useFlowEditor();
+
+  const [collapsed, setCollapsed] = useState(true);
 
   if (issues.length === 0) {
     // Slate-950 base + emerald accents so the panel stays readable when
@@ -39,28 +47,40 @@ export function ValidationPanel() {
   const errors = issues.filter((i) => i.severity === "error");
   const warnings = issues.filter((i) => i.severity === "warning");
   return (
-    <div
-      className={cn(
-        "rounded-lg border bg-slate-950 p-3",
-        errors.length > 0 ? "border-red-500/40" : "border-amber-500/40",
-      )}
+  <div
+    className={cn(
+      "rounded-lg border bg-slate-950 p-3",
+      errors.length > 0 ? "border-red-500/40" : "border-amber-500/40",
+    )}
+  >
+    <button
+      type="button"
+      onClick={() => setCollapsed(!collapsed)}
+      className="mb-2 flex w-full items-center gap-2 text-left text-xs text-slate-400"
     >
-      <div className="mb-2 flex items-center gap-2 text-xs text-slate-400">
-        {errors.length > 0 ? (
-          <CircleAlert className="h-4 w-4 text-red-400" />
-        ) : (
-          <CircleAlert className="h-4 w-4 text-amber-400" />
-        )}
-        {errors.length} error{errors.length === 1 ? "" : "s"},{" "}
-        {warnings.length} warning{warnings.length === 1 ? "" : "s"}
-      </div>
+      {collapsed ? (
+        <ChevronRight className="h-4 w-4" />
+      ) : (
+        <ChevronDown className="h-4 w-4" />
+      )}
+
+      {errors.length} error{errors.length === 1 ? "" : "s"},{" "}
+      {warnings.length} warning{warnings.length === 1 ? "" : "s"}
+    </button>
+
+    {!collapsed && (
       <div className="flex flex-col gap-1">
         {issues.map((i, ix) => (
-          <IssueLine key={ix} issue={i} onJump={requestFlash} />
+          <IssueLine
+            key={ix}
+            issue={i}
+            onJump={requestFlash}
+          />
         ))}
       </div>
-    </div>
-  );
+    )}
+  </div>
+);
 }
 
 /**

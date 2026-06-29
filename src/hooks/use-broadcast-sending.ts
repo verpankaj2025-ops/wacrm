@@ -237,7 +237,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     const { data: existing, error: lookupErr } = await supabase
       .from('contacts')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .in('phone', phones);
     if (lookupErr) {
       throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
@@ -306,9 +306,10 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     if (contactIds.length === 0) return [];
 
     const { data, error } = await supabase
-      .from('contacts')
-      .select('*')
-      .in('id', contactIds);
+  .from('contacts')
+  .select('*')
+  .eq('account_id', accountId)
+  .in('id', contactIds);
     if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
     return data ?? [];
   }

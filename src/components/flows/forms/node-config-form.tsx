@@ -76,13 +76,14 @@ export function NodeConfigForm({
       );
 
     case "send_message":
-      return (
-        <>
-          <TextRow
-            label="Text sent to the customer"
-            value={(cfg as { text?: string }).text ?? ""}
-            onChange={(v) => onUpdateConfig({ text: v })}
-          />
+  return (
+    <>
+      <TextRow
+        label="Text sent to the customer"
+        value={(cfg as { text?: string }).text ?? ""}
+        onChange={(v) => onUpdateConfig({ text: v })}
+        rows={12}
+      />
           <NextNodeRow
             value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
             allNodes={allNodes}
@@ -132,7 +133,7 @@ export function NodeConfigForm({
             label="Prompt sent to the customer"
             value={(cfg as { prompt_text?: string }).prompt_text ?? ""}
             onChange={(v) => onUpdateConfig({ prompt_text: v })}
-            rows={2}
+            rows={4}
           />
           <div>
             <label className="mb-1 block text-xs text-slate-400">
@@ -194,7 +195,7 @@ export function NodeConfigForm({
           label="Internal note (for the agent picking up)"
           value={(cfg as { note?: string }).note ?? ""}
           onChange={(v) => onUpdateConfig({ note: v })}
-          rows={2}
+          rows={6}
         />
       );
 
@@ -257,16 +258,17 @@ function SendButtonsForm({
   return (
     <>
       <TextRow
-        label="Body text"
-        value={cfg.text ?? ""}
-        onChange={(v) => onUpdateConfig({ text: v })}
-        rows={3}
-      />
+  label="Body text"
+  value={cfg.text ?? ""}
+  onChange={(v) => onUpdateConfig({ text: v })}
+  rows={8}
+/>
       <TextRow
-        label="Footer (optional, 60 chars)"
-        value={cfg.footer_text ?? ""}
-        onChange={(v) => onUpdateConfig({ footer_text: v })}
-      />
+  label="Footer (optional, 60 chars)"
+  value={cfg.footer_text ?? ""}
+  onChange={(v) => onUpdateConfig({ footer_text: v })}
+  rows={2}
+/>
       <div>
         <div className="mb-2 flex items-center justify-between">
           <label className="text-xs text-slate-400">
@@ -446,11 +448,11 @@ function SendListForm({
   return (
     <>
       <TextRow
-        label="Body text"
-        value={cfg.text ?? ""}
-        onChange={(v) => onUpdateConfig({ text: v })}
-        rows={3}
-      />
+  label="Body text"
+  value={cfg.text ?? ""}
+  onChange={(v) => onUpdateConfig({ text: v })}
+  rows={8}
+/>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <TextRow
           label="Tap-to-expand button label (≤20 chars)"
@@ -458,10 +460,11 @@ function SendListForm({
           onChange={(v) => onUpdateConfig({ button_label: v })}
         />
         <TextRow
-          label="Footer (optional, 60 chars)"
-          value={cfg.footer_text ?? ""}
-          onChange={(v) => onUpdateConfig({ footer_text: v })}
-        />
+  label="Footer (optional, 60 chars)"
+  value={cfg.footer_text ?? ""}
+  onChange={(v) => onUpdateConfig({ footer_text: v })}
+  rows={2}
+/>
       </div>
 
       <div className="mt-2">

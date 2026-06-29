@@ -576,73 +576,97 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     }
 
     case 'create_deal': {
-      const cfg = step.step_config as CreateDealStepConfig
-      if (!cfg.pipeline_id || !cfg.stage_id) throw new Error('create_deal needs pipeline + stage')
-      await db.from('deals').insert({
-        // Tenancy + audit, same split as automation_logs above.
-        account_id: args.automation.account_id,
-        user_id: args.automation.user_id,
-        pipeline_id: cfg.pipeline_id,
-        stage_id: cfg.stage_id,
-        contact_id: args.contactId,
-        title: interpolate(cfg.title, args),
-        value: cfg.value ?? 0,
-        status: 'open',
-      })
-      return 'deal created'
-    }
+const cfg = step.step_config as CreateDealStepConfig
+
+if (!cfg.pipeline_id || !cfg.stage_id) {
+throw new Error('create_deal needs pipeline + stage')
+}
+
+const existingDeal = await db
+.from('deals')
+.select('id')
+.eq('contact_id', args.contactId)
+.eq('status', 'open')
+.limit(1)
+.maybeSingle()
+
+if (existingDeal.data) {
+return 'deal already exists'
+}
+
+await db.from('deals').insert({
+account_id: args.automation.account_id,
+user_id: args.automation.user_id,
+pipeline_id: cfg.pipeline_id,
+stage_id: cfg.stage_id,
+contact_id: args.contactId,
+title: interpolate(cfg.title, args),
+value: cfg.value ?? 0,
+status: 'open',
+})
+
+return 'deal created'
+}
+
 
     case 'create_task': {
-  const cfg = step.step_config as {
-    title?: string
-    description?: string
-    priority?: string
-    assigned_to?: string | null
-    due_in_hours?: number
-  }
+  const cfg = step.step_config as any
 
   const dueAt =
-    cfg.due_in_hours && cfg.due_in_hours > 0
+    cfg.due_in_minutes
       ? new Date(
-          Date.now() + cfg.due_in_hours * 60 * 60 * 1000
+          Date.now() + cfg.due_in_minutes * 60 * 1000
         ).toISOString()
       : null
 
-  const result = await db
+      const existingTask = await db
   .from('tasks')
-  .insert({
-    account_id: args.automation.account_id,
-    created_by: args.automation.user_id,
+  .select('id')
+  .eq('contact_id', args.contactId)
+  .eq('status', 'pending')
+  .eq(
+    'title',
+    interpolate(cfg.title ?? 'Follow Up', args)
+  )
+  .limit(1)
+  .maybeSingle()
 
-    contact_id: args.contactId ?? null,
+if (existingTask.data) {
+  return 'task already exists'
+}
 
-    conversation_id:
-      args.context.conversation_id ?? null,
+  const { data, error } = await db
+    .from('tasks')
+    .insert({
+      account_id: args.automation.account_id,
+      created_by: args.automation.user_id,
+      contact_id: args.contactId ?? null,
+      conversation_id:
+        args.context.conversation_id ?? null,
+      title: interpolate(
+        cfg.title ?? 'Follow Up',
+        args
+      ),
+      description: cfg.description
+        ? interpolate(cfg.description, args)
+        : null,
+      priority: cfg.priority ?? 'medium',
+      status: 'pending',
+      due_at: dueAt,
+      assigned_to:
+        cfg.assigned_to &&
+        String(cfg.assigned_to).trim() !== ''
+          ? cfg.assigned_to
+          : null,
+    })
+    .select()
+    .single()
 
-    title: interpolate(
-      cfg.title ?? 'Follow Up',
-      args
-    ),
+  if (error) {
+    throw new Error(error.message)
+  }
 
-    description: cfg.description
-      ? interpolate(cfg.description, args)
-      : null,
-
-    priority: cfg.priority ?? 'medium',
-
-    status: 'pending',
-
-    due_at: dueAt,
-
-    assigned_to:
-  cfg.assigned_to &&
-  String(cfg.assigned_to).trim() !== ""
-    ? cfg.assigned_to
-    : null,
-  })
-  .select()
-
-  return 'task created'
+  return `task created (${data.id})`
 }
 
     case 'send_webhook': {
@@ -699,17 +723,58 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   return data.id as string
 }
 
-function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
-  if (automation.trigger_type !== 'keyword_match') return true
-  const cfg = automation.trigger_config as KeywordMatchTriggerConfig
-  if (!cfg?.keywords || cfg.keywords.length === 0) return false
-  const text = (ctx?.message_text ?? '').toString()
-  if (!text) return false
-  const haystack = cfg.case_sensitive ? text : text.toLowerCase()
-  return cfg.keywords.some((raw) => {
-    const k = cfg.case_sensitive ? raw : raw.toLowerCase()
-    return cfg.match_type === 'exact' ? haystack === k : haystack.includes(k)
-  })
+function triggerMatches(
+  automation: Automation,
+  ctx: AutomationContext | undefined,
+): boolean {
+
+  if (automation.trigger_type === 'keyword_match') {
+
+    const cfg =
+      automation.trigger_config as KeywordMatchTriggerConfig
+
+    if (!cfg?.keywords || cfg.keywords.length === 0) {
+      return false
+    }
+
+    const text =
+      (ctx?.message_text ?? '').toString()
+
+    if (!text) {
+      return false
+    }
+
+    const haystack =
+      cfg.case_sensitive
+        ? text
+        : text.toLowerCase()
+
+    return cfg.keywords.some((raw) => {
+      const k =
+        cfg.case_sensitive
+          ? raw
+          : raw.toLowerCase()
+
+      return cfg.match_type === 'exact'
+        ? haystack === k
+        : haystack.includes(k)
+    })
+  }
+
+  if (automation.trigger_type === 'tag_added') {
+
+    const cfg =
+      automation.trigger_config as {
+        tag_id?: string
+      }
+
+    return (
+      !!cfg.tag_id &&
+      cfg.tag_id === ctx?.tag_id
+    )
+  }
+
+  return true
 }
 
 async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): Promise<boolean> {
@@ -818,18 +883,68 @@ function interpolate(s: string, args: ExecuteArgs): string {
    }
 
   async function finalizeLog(
-  logId: string | null,
-  status: 'success' | 'partial' | 'failed',
-  errorMessage: string | null,
+logId: string | null,
+status: 'success' | 'partial' | 'failed',
+errorMessage: string | null,
 ) {
-  if (!logId) return
-  await supabaseAdmin()
-    .from('automation_logs')
-    .update({ status, error_message: errorMessage })
-    .eq('id', logId)
-}
+if (!logId) return
 
-function getRetryDelayMinutes(attempt: number): number {
+const db = supabaseAdmin()
+
+await db
+.from('automation_logs')
+.update({
+status,
+error_message: errorMessage,
+})
+.eq('id', logId)
+
+// Supervisor Layer
+if (status === 'failed') {
+const { data: log } = await db
+.from('automation_logs')
+.select('*')
+.eq('id', logId)
+.single()
+
+if (log?.account_id) {
+  if (status === 'failed') {
+
+const { data: existingTask } = await db
+.from('tasks')
+.select('id')
+.eq('contact_id', log.contact_id)
+.eq('title', 'Automation Failure')
+.eq('status', 'pending')
+.maybeSingle()
+
+if (!existingTask) {
+
+await db
+.from('tasks')
+.insert({
+account_id: log.account_id,
+created_by: log.user_id,
+contact_id: log.contact_id,
+title: 'Automation Failure',
+description:
+errorMessage ??
+'Automation failed. Check automation logs.',
+priority: 'high',
+status: 'pending',
+})
+
+} // if (!existingTask)
+
+} // inner if (status === 'failed')
+
+} // if (log?.account_id)
+
+} // outer if (status === 'failed')
+
+} // finalizeLog function
+
+function getRetryDelayMinutes(attempt:number): number {
   const delays = [1, 5, 15, 60, 360]
 
   return delays[Math.min(attempt - 1, delays.length - 1)]

@@ -13,12 +13,29 @@ export async function GET() {
   const {
     data: { user },
   } = await supabase.auth.getUser()
+
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    const { data: profile } = await supabase
+  .from('profiles')
+  .select('account_id')
+  .eq('user_id', user.id)
+  .single()
+
+const accountId = profile?.account_id
+
+if (!accountId) {
+  return NextResponse.json(
+    { error: 'Your profile is not linked to an account.' },
+    { status: 403 }
+  )
+}
+
   const { data, error } = await supabase
-    .from('automations')
-    .select('*')
-    .order('created_at', { ascending: false })
+  .from('automations')
+  .select('*')
+  .eq('account_id', accountId)
+  .order('created_at', { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ automations: data ?? [] })
 }

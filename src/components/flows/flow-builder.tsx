@@ -459,7 +459,7 @@ function NodeConfigWithAdvanced({
   onUpdate: (patch: Partial<BuilderNode>) => void;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
 }) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(true);
   const hasReplyIds =
     node.node_type === "send_buttons" || node.node_type === "send_list";
   return (
@@ -487,7 +487,9 @@ function NodeConfigWithAdvanced({
           <div className="mt-3 flex flex-col gap-3">
             <div>
               <label className="mb-1 block text-xs text-slate-400">
-                Node key (internal identifier — keep stable for analytics)
+                <label className="mb-1 block text-xs text-slate-400">
+                   Node Name
+                </label>
               </label>
               <Input
                 value={node.node_key}

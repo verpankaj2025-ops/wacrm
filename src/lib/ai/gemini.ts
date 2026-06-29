@@ -355,7 +355,15 @@ Format:
 `;
 
   try {
-  const result = await model.generateContent(prompt);
+  const result = (await Promise.race([
+  model.generateContent(prompt),
+  new Promise((_, reject) =>
+    setTimeout(
+      () => reject(new Error("Gemini timeout after 8000ms")),
+      8000
+    )
+  ),
+])) as Awaited<ReturnType<typeof model.generateContent>>;
 
   const text = result.response.text();
 
