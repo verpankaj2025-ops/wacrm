@@ -170,6 +170,11 @@ export function WhatsAppConfig() {
   }, [authLoading, profileLoading, user, accountId, fetchConfig]);
 
   async function handleSave() {
+
+    console.error("====================================");
+    console.error("PIN STATE BEFORE SAVE:", JSON.stringify(pin));
+    console.error("====================================");
+
     if (!phoneNumberId.trim()) {
       toast.error('Phone Number ID is required');
       return;
@@ -413,7 +418,7 @@ export function WhatsAppConfig() {
             {connectionStatus === 'connected'
               ? 'Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.'
               : statusMessage ||
-                'Configure your Meta API credentials below to connect your WhatsApp Business account.'}
+              'Configure your Meta API credentials below to connect your WhatsApp Business account.'}
           </AlertDescription>
         </Alert>
 
@@ -614,9 +619,13 @@ export function WhatsAppConfig() {
                 maxLength={6}
                 placeholder="6-digit PIN from Meta WhatsApp Manager"
                 value={pin}
-                onChange={(e) =>
-                  setPin(e.target.value.replace(/\D/g, '').slice(0, 6))
-                }
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+
+                  console.error("PIN TYPED:", value);
+
+                  setPin(value);
+                }}
                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 tracking-widest"
               />
               <p className="text-xs text-slate-500 leading-relaxed">

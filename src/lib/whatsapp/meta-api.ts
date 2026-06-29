@@ -142,17 +142,24 @@ export async function registerPhoneNumber(
   // text "already registered" appears when the number is already
   // subscribed to this app — that's success from the caller's
   // perspective, surface it as such.
-  let data: { error?: { message?: string; code?: number; error_subcode?: number } } = {}
-  try {
-    data = await response.json()
-  } catch {
-    /* keep empty */
-  }
+  let data: any = {}
+
+try {
+  data = await response.json()
+  console.log("======================================")
+  console.log("META REGISTER ERROR")
+  console.log(JSON.stringify(data, null, 2))
+  console.log("======================================")
+} catch (e) {
+  console.log("REGISTER RESPONSE STATUS:", response.status)
+}
   const message = data.error?.message ?? `Meta API error: ${response.status}`
   if (/already.*registered/i.test(message)) {
     return { success: true, alreadyRegistered: true }
   }
-  throw new Error(message)
+  throw new Error(
+  `${message}\nFull Meta Response:\n${JSON.stringify(data, null, 2)}`
+)
 }
 
 export interface SubscribeWabaToAppArgs {

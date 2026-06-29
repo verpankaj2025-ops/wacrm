@@ -167,40 +167,52 @@ export async function POST(request: Request) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-hub-signature-256')
 
+  console.log("=================================")
+  console.log("WEBHOOK POST RECEIVED")
+  console.log("Signature:", signature)
+
   if (!verifyMetaWebhookSignature(rawBody, signature)) {
-    // 401 (not 200) — we want Meta's delivery dashboard to show failures
-    // loudly if a misconfiguration causes signatures to stop matching,
-    // rather than silently eating events.
-    logger.warn(
-  'whatsapp_webhook_invalid_signature'
-)
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    console.log("❌ SIGNATURE FAILED")
+    logger.warn("whatsapp_webhook_invalid_signature")
+
+    return NextResponse.json(
+      { error: "Invalid signature" },
+      { status: 401 }
+    )
   }
+
+  console.log("✅ SIGNATURE VERIFIED")
 
   let body: { entry?: WhatsAppWebhookEntry[] }
+
   try {
     body = JSON.parse(rawBody)
+    console.log("Incoming Body:")
+    console.log(JSON.stringify(body, null, 2))
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    return NextResponse.json(
+      { error: "Invalid JSON" },
+      { status: 400 }
+    )
   }
 
-  // Process asynchronously so we can ack Meta within their timeout.
   processWebhook(body).catch((error) => {
-    logger.error(
-  'whatsapp_webhook_processing_failed',
-  {
-    error:
-      error instanceof Error
-        ? error.message
-        : String(error),
-  }
-)
+    logger.error("whatsapp_webhook_processing_failed", {
+      error: error instanceof Error ? error.message : String(error),
+    })
   })
 
-  return NextResponse.json({ status: 'received' }, { status: 200 })
+  return NextResponse.json(
+    { status: "received" },
+    { status: 200 }
+  )
 }
-
 async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
+
+  console.log("=================================");
+console.log("PROCESS WEBHOOK START");
+console.log("=================================");
+
   if (!body.entry) return
 
   for (const entry of body.entry) {

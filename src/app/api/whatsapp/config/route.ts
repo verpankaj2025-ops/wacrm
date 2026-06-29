@@ -294,6 +294,11 @@ export async function POST(request: Request) {
 
     const needsRegistration = !sameNumber || (typeof pin === 'string' && pin.length > 0)
     if (needsRegistration) {
+
+      console.error("====================================")
+console.error("REQUEST BODY:", body)
+console.error("PIN VALUE:", pin)
+console.error("====================================")
       if (!pin) {
         return NextResponse.json(
           {
