@@ -739,7 +739,11 @@ if (convError) {
 
   if (!flowConsumed && inboundText.trim()) {
   try {
-    const aiResult = await routeToAI(inboundText)
+    const aiResult = await routeToAI(
+  inboundText,
+  conversation.id,
+  contactRecord.id,
+)
 
     await processAIIntent({
       intent: aiResult.intent,
@@ -750,13 +754,17 @@ if (convError) {
     })
 
     if (!aiResult.handoff) {
-      await engineSendText({
-        accountId,
-        userId: configOwnerUserId,
-        conversationId: conversation.id,
-        contactId: contactRecord.id,
-        text: aiResult.reply,
-      })
+      console.log("[AI SEND START]", aiResult.reply)
+
+await engineSendText({
+  accountId,
+  userId: configOwnerUserId,
+  conversationId: conversation.id,
+  contactId: contactRecord.id,
+  text: aiResult.reply,
+})
+
+console.log("[AI SEND SUCCESS]")
     }
   } catch (error) {
   logger.error("ai_processing_failed", {

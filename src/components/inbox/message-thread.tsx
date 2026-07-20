@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -147,6 +153,9 @@ export function MessageThread({
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
@@ -237,6 +246,32 @@ export function MessageThread({
   });
 
   const conversationId = conversation?.id;
+
+  useEffect(() => {
+  const el = scrollRef.current;
+
+  if (!el) return;
+
+  const handleScroll = () => {
+    const distance =
+      el.scrollHeight -
+      el.scrollTop -
+      el.clientHeight;
+
+    const stick = distance < 120;
+
+shouldStickToBottomRef.current = stick;
+setShowScrollToBottom(!stick);
+  };
+
+  el.addEventListener("scroll", handleScroll);
+
+  handleScroll();
+
+  return () =>
+    el.removeEventListener("scroll", handleScroll);
+}, []);
+
   const hasUnread = (conversation?.unread_count ?? 0) > 0;
 
   // Fetch messages whenever the selected conversation changes. Kept
@@ -410,11 +445,16 @@ export function MessageThread({
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
-    if (scrollRef.current) {
-      const el = scrollRef.current;
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [messages]);
+  const el = scrollRef.current;
+
+  if (!el) return;
+
+  if (!shouldStickToBottomRef.current) return;
+
+  requestAnimationFrame(() => {
+    el.scrollTop = el.scrollHeight;
+  });
+}, [messages]);
 
   const handleSend = useCallback(
     async (text: string, replyToId?: string) => {
@@ -869,6 +909,24 @@ export function MessageThread({
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            {showScrollToBottom && (
+  <button
+    type="button"
+    onClick={() => {
+      const el = scrollRef.current;
+      if (!el) return;
+
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: "smooth",
+      });
+    }}
+    className="fixed bottom-24 right-6 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 transition"
+    aria-label="Scroll to latest"
+  >
+    <ChevronDown className="h-5 w-5" />
+  </button>
+)}
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">

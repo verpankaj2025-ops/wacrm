@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useRef, useCallback, KeyboardEvent } from "react";
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  KeyboardEvent,
+} from "react";
 import { Send, LayoutTemplate } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -41,6 +47,18 @@ export function MessageComposer({
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
 
+  const draftKey = `wacrm:draft:${conversationId}`;
+
+  useEffect(() => {
+  if (sessionExpired || readOnly) return;
+
+  const id = requestAnimationFrame(() => {
+    textareaRef.current?.focus();
+  });
+
+  return () => cancelAnimationFrame(id);
+}, [conversationId, sessionExpired, readOnly]);
+
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -57,9 +75,12 @@ export function MessageComposer({
     try {
       onSend(trimmed, replyTo?.id);
       setText("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
+
+localStorage.removeItem(draftKey);
+
+if (textareaRef.current) {
+  textareaRef.current.style.height = "auto";
+}
     } finally {
       setSending(false);
     }
