@@ -1095,26 +1095,43 @@ async function findOrCreateConversation(
   // Create new conversation. Same tenancy + audit split as
   // findOrCreateContact above.
   const { data: newConv, error: createError } = await supabaseAdmin()
-    .from('conversations')
-    .insert({
-      account_id: accountId,
-      user_id: configOwnerUserId,
-      contact_id: contactId,
-    })
-    .select()
-    .single()
+  .from("conversations")
+  .insert({
+    account_id: accountId,
+    user_id: configOwnerUserId,
+    contact_id: contactId,
+  })
+  .select()
+  .single()
 
-  if (createError) {
-    logger.error(
-  'conversation_creation_failed',
-  {
-    error: createError?.message,
-    accountId,
-    contactId,
-  }
-)
-    return null
-  }
-
+if (!createError && newConv) {
   return newConv
+}
+
+// Another webhook may have inserted the row first.
+if (
+  createError &&
+  (createError as { code?: string }).code === "23505"
+) {
+  const { data: existingAfterConflict, error: refetchError } =
+    await supabaseAdmin()
+      .from("conversations")
+      .select("*")
+      .eq("account_id", accountId)
+      .eq("contact_id", contactId)
+      .single()
+
+  if (!refetchError && existingAfterConflict) {
+    return existingAfterConflict
+  }
+}
+
+logger.error("conversation_creation_failed", {
+  error: createError?.message,
+  code: (createError as { code?: string })?.code,
+  accountId,
+  contactId,
+})
+
+return null
 }
