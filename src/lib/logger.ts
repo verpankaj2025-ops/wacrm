@@ -1,4 +1,4 @@
-type LogLevel = "info" | "warn" | "error";
+type LogLevel = "debug" | "info" | "warn" | "error";
 
 interface LogMeta {
   [key: string]: unknown;
@@ -19,20 +19,30 @@ function write(
   const line = JSON.stringify(payload);
 
   switch (level) {
-    case "error":
-      console.error(line);
-      break;
+  case "error":
+    console.error(line);
+    break;
 
-    case "warn":
-      console.warn(line);
-      break;
+  case "warn":
+    console.warn(line);
+    break;
 
-    default:
-      console.log(line);
-  }
+  case "debug":
+    if (process.env.NODE_ENV !== "production") {
+      console.debug(line);
+    }
+    break;
+
+  default:
+    console.log(line);
+}
 }
 
 export const logger = {
+  debug(message: string, meta?: LogMeta) {
+    write("debug", message, meta);
+  },
+
   info(message: string, meta?: LogMeta) {
     write("info", message, meta);
   },

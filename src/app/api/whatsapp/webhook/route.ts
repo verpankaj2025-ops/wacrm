@@ -185,12 +185,11 @@ export async function POST(request: Request) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-hub-signature-256')
 
-  console.log("=================================")
-  console.log("WEBHOOK POST RECEIVED")
-  console.log("Signature:", signature)
+  logger.info("whatsapp_webhook_received", {
+  hasSignature: Boolean(signature),
+})
 
   if (!verifyMetaWebhookSignature(rawBody, signature)) {
-    console.log("❌ SIGNATURE FAILED")
     logger.warn("whatsapp_webhook_invalid_signature")
 
     return NextResponse.json(
@@ -199,14 +198,15 @@ export async function POST(request: Request) {
     )
   }
 
-  console.log("✅ SIGNATURE VERIFIED")
+  logger.info("whatsapp_webhook_signature_verified")
 
   let body: { entry?: WhatsAppWebhookEntry[] }
 
   try {
     body = JSON.parse(rawBody)
-    console.log("Incoming Body:")
-    console.log(JSON.stringify(body, null, 2))
+    logger.debug("whatsapp_webhook_body_received", {
+  entries: body.entry?.length ?? 0,
+})
   } catch {
     return NextResponse.json(
       { error: "Invalid JSON" },
@@ -227,9 +227,7 @@ export async function POST(request: Request) {
 }
 async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
-  console.log("=================================");
-console.log("PROCESS WEBHOOK START");
-console.log("=================================");
+  logger.info("whatsapp_webhook_processing_started")
 
   if (!body.entry) return
 
@@ -657,16 +655,18 @@ async function processMessage(
   })
 
   if (msgError) {
-    console.error('Error inserting message:', msgError)
+    logger.error("message_insert_failed", {
+  error: msgError.message,
+  conversationId: conversation.id,
+  metaMessageId: message.id,
+})
     return
   }
 
-  console.log(
-  '[WEBHOOK]',
-  conversation.id,
-  'current unread:',
-  conversation.unread_count
-)
+  logger.debug("conversation_before_update", {
+  conversationId: conversation.id,
+  unreadCount: conversation.unread_count,
+})
 
   // Update conversation atomically
 const { error: convError } = await supabaseAdmin().rpc(
@@ -678,7 +678,10 @@ const { error: convError } = await supabaseAdmin().rpc(
 )
 
 if (convError) {
-  console.error('Error updating conversation:', convError)
+  logger.error("conversation_update_failed", {
+  error: convError.message,
+  conversationId: conversation.id,
+})
 }
 
   // If this contact was a recent broadcast recipient, flag the reply
@@ -729,13 +732,10 @@ if (convError) {
   
   const inboundText = contentText ?? message.text?.body ?? ''
 
-  console.log(
-  "[AI DEBUG]",
-  {
-    flowConsumed,
-    inboundText,
-  }
-)
+  logger.debug("ai_processing_started", {
+  flowConsumed,
+  hasInboundText: inboundText.trim().length > 0,
+})
 
   if (!flowConsumed && inboundText.trim()) {
   try {
@@ -759,7 +759,11 @@ if (convError) {
       })
     }
   } catch (error) {
-  console.error('[AI ERROR]', error)
+  logger.error("ai_processing_failed", {
+  error: error instanceof Error ? error.message : String(error),
+  conversationId: conversation.id,
+  contactId: contactRecord.id,
+})
 
   await supabaseAdmin()
   .from('tasks')
@@ -821,7 +825,13 @@ if (convError) {
         message_text: inboundText,
         conversation_id: conversation.id,
       },
-    }).catch((err) => console.error('[automations] dispatch failed:', err))
+    }).catch((err) =>
+  logger.error("automation_dispatch_failed", {
+    error: err instanceof Error ? err.message : String(err),
+    triggerType,
+    contactId: contactRecord.id,
+  })
+)
   }
 }
 
