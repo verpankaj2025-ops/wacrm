@@ -37,7 +37,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import { MessageComposer } from "./message-composer";
@@ -137,6 +136,8 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
 const DOODLE_BG_CLASSES =
   "bg-slate-950 bg-[url('/inbox-doodle.svg')] bg-repeat";
 
+const MESSAGE_PAGE_SIZE = 50;
+
 export function MessageThread({
   conversation,
   contact,
@@ -155,6 +156,20 @@ export function MessageThread({
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+
+  const prependScrollRef = useRef<{
+    scrollHeight: number;
+    scrollTop: number;
+  } | null>(null);
+
+  const messagesRef = useRef<Message[]>(messages);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -274,10 +289,8 @@ setShowScrollToBottom(!stick);
 
   const hasUnread = (conversation?.unread_count ?? 0) > 0;
 
-  // Fetch messages whenever the selected conversation changes. Kept
-  // separate from the unread-reset effect so that incoming messages
-  // arriving while the thread is open don't trigger a full refetch —
-  // they only flip hasUnread, which only the reset effect listens to.
+  // Load the newest page when a conversation changes.
+  // Older history is fetched lazily as the agent scrolls upward.
   useEffect(() => {
     if (!conversationId) return;
 
@@ -286,31 +299,275 @@ setShowScrollToBottom(!stick);
 
     (async () => {
       setLoading(true);
+      setHasOlderMessages(false);
+      prependScrollRef.current = null;
 
       const { data, error } = await supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .limit(MESSAGE_PAGE_SIZE);
 
       if (cancelled) return;
 
       if (error) {
-        console.error("Failed to fetch messages:", error);
-      } else {
-        onMessagesLoadedRef.current(data ?? []);
+        console.error(
+          "Failed to fetch messages:",
+          error,
+        );
+        setLoading(false);
+        return;
       }
 
-      if (!cancelled) setLoading(false);
+      const latestMessages = [
+        ...(data ?? []),
+      ].reverse();
+
+      onMessagesLoadedRef.current(latestMessages);
+
+      messagesRef.current = latestMessages;
+
+      setHasOlderMessages(
+        (data?.length ?? 0) === MESSAGE_PAGE_SIZE,
+      );
+
+      setLoading(false);
     })();
 
     return () => {
       cancelled = true;
     };
-    // `resyncToken` is included so the parent can force a refetch when
-    // the realtime channel reconnects or the tab regains focus —
-    // realtime is best-effort and any message events sent while the WS
-    // was disconnected or throttled are otherwise lost.
+  }, [conversationId]);
+
+  const loadOlderMessages = useCallback(
+    async () => {
+      if (
+        !conversationId ||
+        loadingOlder ||
+        !hasOlderMessages
+      ) {
+        return;
+      }
+
+      const currentMessages =
+        messagesRef.current;
+
+      const oldestMessage = currentMessages[0];
+
+      if (!oldestMessage) return;
+
+      const element = scrollRef.current;
+
+      prependScrollRef.current = element
+        ? {
+            scrollHeight: element.scrollHeight,
+            scrollTop: element.scrollTop,
+          }
+        : null;
+
+      setLoadingOlder(true);
+
+      try {
+        const supabase = createClient();
+
+        const { data, error } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", conversationId)
+          .lt(
+            "created_at",
+            oldestMessage.created_at,
+          )
+          .order("created_at", {
+            ascending: false,
+          })
+          .limit(MESSAGE_PAGE_SIZE);
+
+        if (error) {
+          prependScrollRef.current = null;
+
+          console.error(
+            "Failed to fetch older messages:",
+            error,
+          );
+
+          return;
+        }
+
+        const olderMessages = [
+          ...(data ?? []),
+        ].reverse();
+
+        if (olderMessages.length === 0) {
+          setHasOlderMessages(false);
+          prependScrollRef.current = null;
+          return;
+        }
+
+        const merged = [
+          ...olderMessages,
+          ...currentMessages,
+        ];
+
+        messagesRef.current = merged;
+
+        onMessagesLoadedRef.current(merged);
+
+        setHasOlderMessages(
+          (data?.length ?? 0) ===
+            MESSAGE_PAGE_SIZE,
+        );
+      } finally {
+        setLoadingOlder(false);
+      }
+    },
+    [
+      conversationId,
+      hasOlderMessages,
+      loadingOlder,
+    ],
+  );
+
+  // Load older history when the user reaches
+  // the top of the message pane.
+  useEffect(() => {
+    const element = scrollRef.current;
+
+    if (!element) return;
+
+    const handleTopScroll = () => {
+      if (element.scrollTop < 120) {
+        void loadOlderMessages();
+      }
+    };
+
+    element.addEventListener(
+      "scroll",
+      handleTopScroll,
+      { passive: true },
+    );
+
+    return () => {
+      element.removeEventListener(
+        "scroll",
+        handleTopScroll,
+      );
+    };
+  }, [loadOlderMessages]);
+
+  // Preserve the exact visual position when older
+  // messages are prepended.
+  useEffect(() => {
+    const snapshot =
+      prependScrollRef.current;
+
+    if (!snapshot) return;
+
+    requestAnimationFrame(() => {
+      const element = scrollRef.current;
+
+      if (!element) {
+        prependScrollRef.current = null;
+        return;
+      }
+
+      const heightDelta =
+        element.scrollHeight -
+        snapshot.scrollHeight;
+
+      element.scrollTop =
+        snapshot.scrollTop + heightDelta;
+
+      prependScrollRef.current = null;
+    });
+  }, [messages]);
+
+  // On realtime reconnect / tab focus refresh,
+  // refresh only the newest page and merge it into
+  // the already-loaded history.
+  useEffect(() => {
+    if (
+      !conversationId ||
+      resyncToken === 0
+    ) {
+      return;
+    }
+
+    const supabase = createClient();
+    let cancelled = false;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", conversationId)
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(MESSAGE_PAGE_SIZE);
+
+      if (
+        cancelled ||
+        error
+      ) {
+        if (error) {
+          console.error(
+            "Failed to resync messages:",
+            error,
+          );
+        }
+
+        return;
+      }
+
+      const latestMessages = [
+        ...(data ?? []),
+      ].reverse();
+
+      const currentMessages =
+        messagesRef.current.filter(
+          (message) =>
+            message.conversation_id ===
+            conversationId,
+        );
+
+      const map = new Map(
+        currentMessages.map((message) => [
+          message.id,
+          message,
+        ]),
+      );
+
+      for (const message of latestMessages) {
+        map.set(message.id, message);
+      }
+
+      const merged = [
+        ...map.values(),
+      ].sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() -
+          new Date(b.created_at).getTime(),
+      );
+
+      messagesRef.current = merged;
+
+      onMessagesLoadedRef.current(
+        merged,
+      );
+
+      setHasOlderMessages(
+        (data?.length ?? 0) ===
+          MESSAGE_PAGE_SIZE ||
+          currentMessages.length >
+            MESSAGE_PAGE_SIZE,
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [conversationId, resyncToken]);
 
   // Reactions fetch — pulls the current state from the DB. Kept separate
@@ -761,7 +1018,7 @@ setShowScrollToBottom(!stick);
     : "Assign";
 
   return (
-    <div className={cn("flex flex-1 flex-col", DOODLE_BG_CLASSES)}>
+    <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", DOODLE_BG_CLASSES)}>
       {/* Header — solid bg-slate-900 sits on top of the doodle so the
           name/avatar/dropdowns stay legible. */}
       <div className="flex items-center justify-between gap-2 border-b border-slate-800 bg-slate-900 px-3 py-3 sm:px-4">
@@ -905,32 +1162,37 @@ setShowScrollToBottom(!stick);
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4"
+      >
+        {hasOlderMessages && !loading && (
+          <div className="sticky top-0 z-10 flex justify-center pb-3">
+            <button
+              type="button"
+              onClick={() => void loadOlderMessages()}
+              disabled={loadingOlder}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/95 px-3 py-1.5 text-[11px] text-slate-300 shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
+            >
+              {loadingOlder && (
+                <RefreshCw className="h-3 w-3 animate-spin" />
+              )}
+              {loadingOlder
+                ? "Loading older messages..."
+                : "Load older messages"}
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            {showScrollToBottom && (
-  <button
-    type="button"
-    onClick={() => {
-      const el = scrollRef.current;
-      if (!el) return;
-
-      el.scrollTo({
-        top: el.scrollHeight,
-        behavior: "smooth",
-      });
-    }}
-    className="fixed bottom-24 right-6 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 transition"
-    aria-label="Scroll to latest"
-  >
-    <ChevronDown className="h-5 w-5" />
-  </button>
-)}
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
-            <p className="text-sm text-slate-500">No messages yet</p>
+            <p className="text-sm text-slate-500">
+              No messages yet
+            </p>
             <p className="text-xs text-slate-600">
               Send a template to start the conversation
             </p>
@@ -939,43 +1201,70 @@ setShowScrollToBottom(!stick);
           <div className="space-y-4">
             {messageGroups.map((group) => (
               <div key={group.date}>
-                {/* Date separator */}
                 <div className="mb-4 flex items-center justify-center">
                   <span className="rounded-full bg-slate-800 px-3 py-1 text-[10px] font-medium text-slate-400">
                     {formatDateSeparator(group.date)}
                   </span>
                 </div>
-                {/* Messages */}
+
                 <div className="space-y-2">
                   {group.messages.map((msg) => {
-                    const parent = msg.reply_to_message_id
-                      ? messagesById.get(msg.reply_to_message_id)
-                      : null;
+                    const parent =
+                      msg.reply_to_message_id
+                        ? messagesById.get(
+                            msg.reply_to_message_id,
+                          )
+                        : null;
+
                     const reply = parent
                       ? {
-                          authorLabel: authorLabelFor(parent),
-                          preview: buildReplyPreview(parent),
+                          authorLabel:
+                            authorLabelFor(parent),
+                          preview:
+                            buildReplyPreview(parent),
                         }
                       : null;
-                    const msgReactions = reactionsByMessageId.get(msg.id);
-                    // Toggle is computed at the call site — `msgReactions`
-                    // and `user?.id` are already in scope, no extra hook.
-                    const handlePillToggle = (emoji: string) => {
-                      const own = msgReactions?.find(
-                        (r) =>
-                          r.actor_type === "agent" &&
-                          r.actor_id === user?.id,
+
+                    const msgReactions =
+                      reactionsByMessageId.get(msg.id);
+
+                    const handlePillToggle = (
+                      emoji: string,
+                    ) => {
+                      const own =
+                        msgReactions?.find(
+                          (reaction) =>
+                            reaction.actor_type ===
+                              "agent" &&
+                            reaction.actor_id ===
+                              user?.id,
+                        );
+
+                      const next =
+                        own?.emoji === emoji
+                          ? ""
+                          : emoji;
+
+                      void postReaction(
+                        msg.id,
+                        next,
                       );
-                      const next = own?.emoji === emoji ? "" : emoji;
-                      void postReaction(msg.id, next);
                     };
+
                     return (
                       <MessageActions
                         key={msg.id}
                         message={msg}
-                        onReply={() => handleStartReply(msg)}
+                        onReply={() =>
+                          handleStartReply(msg)
+                        }
                         onReact={(emoji) => {
-                          if (emoji) void postReaction(msg.id, emoji);
+                          if (emoji) {
+                            void postReaction(
+                              msg.id,
+                              emoji,
+                            );
+                          }
                         }}
                       >
                         <MessageBubble
@@ -983,7 +1272,9 @@ setShowScrollToBottom(!stick);
                           reply={reply}
                           reactions={msgReactions}
                           currentUserId={user?.id}
-                          onToggleReaction={handlePillToggle}
+                          onToggleReaction={
+                            handlePillToggle
+                          }
                         />
                       </MessageActions>
                     );
@@ -994,6 +1285,28 @@ setShowScrollToBottom(!stick);
           </div>
         )}
       </div>
+
+      {showScrollToBottom && !loading && (
+        <button
+          type="button"
+          onClick={() => {
+            const element =
+              scrollRef.current;
+
+            if (!element) return;
+
+            element.scrollTo({
+              top: element.scrollHeight,
+              behavior: "smooth",
+            });
+          }}
+          className="fixed bottom-24 right-6 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition hover:scale-105"
+          aria-label="Scroll to latest"
+          title="Scroll to latest"
+        >
+          <ChevronDown className="h-5 w-5" />
+        </button>
+      )}
 
       {/* Composer */}
       <MessageComposer
