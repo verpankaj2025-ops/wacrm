@@ -739,11 +739,7 @@ if (convError) {
 
   if (!flowConsumed && inboundText.trim()) {
   try {
-    const aiResult = await routeToAI(
-  inboundText,
-  conversation.id,
-  contactRecord.id,
-)
+    const aiResult = await routeToAI(inboundText)
 
     await processAIIntent({
       intent: aiResult.intent,
