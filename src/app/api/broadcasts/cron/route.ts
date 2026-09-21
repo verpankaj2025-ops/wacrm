@@ -410,6 +410,9 @@ export async function GET(
         let messageId =
           ""
 
+        let lastSendError =
+          "WhatsApp template send failed."
+
         const params =
           paramsMap.get(
             contact.id,
@@ -441,14 +444,14 @@ export async function GET(
 
             break
           } catch (error) {
-            const message =
+            lastSendError =
               error instanceof Error
                 ? error.message
                 : String(error)
 
             if (
               !isRecipientNotAllowedError(
-                message,
+                lastSendError,
               )
             ) {
               break
@@ -467,7 +470,7 @@ export async function GET(
               status:
                 "failed",
               error_message:
-                "WhatsApp template send failed.",
+                lastSendError,
             })
             .eq(
               "id",
