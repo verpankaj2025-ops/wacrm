@@ -15,6 +15,10 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
+import {
+  checkMetaTemplateAvailability,
+  metaTemplateBroadcastError,
+} from '@/lib/whatsapp/meta-template-availability'
 
 interface BroadcastResult {
   phone: string
@@ -151,6 +155,42 @@ export async function POST(request: Request) {
     }
 
     const accessToken = decrypt(config.access_token)
+
+    if (!config.waba_id) {
+      return NextResponse.json(
+        {
+          error:
+            'WhatsApp Business Account ID is missing. Sync/reconnect WhatsApp in Settings first.',
+        },
+        { status: 400 },
+      )
+    }
+
+    const liveTemplate =
+      await checkMetaTemplateAvailability({
+        wabaId: config.waba_id,
+        accessToken,
+        name: template_name,
+        language:
+          template_language || 'en_US',
+      })
+
+    const liveTemplateError =
+      metaTemplateBroadcastError(
+        template_name,
+        template_language || 'en_US',
+        liveTemplate,
+      )
+
+    if (liveTemplateError) {
+      return NextResponse.json(
+        {
+          error:
+            liveTemplateError,
+        },
+        { status: 400 },
+      )
+    }
 
     // Load the template row once so sendTemplateMessage can build
     // header + button components on each iteration. Loading inside

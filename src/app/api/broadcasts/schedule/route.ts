@@ -6,6 +6,10 @@ import { supabaseAdmin } from "@/lib/automations/admin-client"
 import {
   resolveServerAudience,
 } from "@/lib/broadcasts/server-audience"
+import {
+  checkMetaTemplateAvailability,
+  metaTemplateBroadcastError,
+} from "@/lib/whatsapp/meta-template-availability"
 
 async function getAccount() {
   const supabase = await createClient()
@@ -114,6 +118,73 @@ export async function POST(
 
     const admin =
       supabaseAdmin()
+
+    const {
+      data: whatsappConfig,
+      error:
+        whatsappConfigError,
+    } =
+      await admin
+        .from("whatsapp_config")
+        .select(
+          "waba_id,access_token",
+        )
+        .eq(
+          "account_id",
+          account.accountId,
+        )
+        .maybeSingle()
+
+    if (
+      whatsappConfigError ||
+      !whatsappConfig
+    ) {
+      throw new Error(
+        whatsappConfigError?.message ??
+          "WhatsApp is not configured.",
+      )
+    }
+
+    if (
+      !whatsappConfig.waba_id
+    ) {
+      throw new Error(
+        "WABA ID is missing. Reconnect WhatsApp in Settings.",
+      )
+    }
+
+    const accessToken =
+      require("@/lib/whatsapp/encryption").decrypt(
+        whatsappConfig.access_token,
+      )
+
+    const liveTemplate =
+      await checkMetaTemplateAvailability({
+        wabaId:
+          whatsappConfig.waba_id,
+        accessToken,
+        name:
+          templateName,
+        language:
+          templateLanguage,
+      })
+
+    const liveTemplateError =
+      metaTemplateBroadcastError(
+        templateName,
+        templateLanguage,
+        liveTemplate,
+      )
+
+    if (liveTemplateError) {
+      return NextResponse.json(
+        {
+          error:
+            liveTemplateError,
+        },
+        { status: 400 },
+      )
+    }
 
     const {
       data: template,

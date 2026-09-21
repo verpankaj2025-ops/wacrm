@@ -71,6 +71,8 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         <h2 className="text-lg font-semibold text-white">Choose a Template</h2>
         <p className="mt-1 text-sm text-slate-400">
           Select an approved message template for your broadcast.
+          The server also verifies the exact template name + language
+          against Meta before sending or scheduling.
         </p>
       </div>
 
