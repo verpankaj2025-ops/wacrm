@@ -44,6 +44,8 @@ import {
   Download,
   MessageCircle,
   PlayCircle,
+  Send,
+  Bell,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ContactForm } from '@/components/contacts/contact-form';
@@ -52,6 +54,7 @@ import { ImportModal } from '@/components/contacts/import-modal';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { StartFollowUpDialog } from '@/components/contacts/start-followup-dialog';
+import { BulkContactActionsDialog } from '@/components/contacts/bulk-contact-actions-dialog';
 
 const PAGE_SIZE = 25;
 
@@ -94,6 +97,12 @@ const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
 const [deleting, setDeleting] = useState(false);
 const [followupContact, setFollowupContact] = useState<Contact | null>(null);
 const [followupOpen, setFollowupOpen] = useState(false);
+const [bulkContactActionsOpen, setBulkContactActionsOpen] =
+  useState(false);
+const [bulkContactActionMode, setBulkContactActionMode] =
+  useState<
+    'sequence' | 'freeform' | 'template'
+  >('sequence');
 
   // All tags for display
 const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
@@ -439,6 +448,18 @@ const { data, count, error } = await query;
   })();
 }, [supabase]);
 
+  function openBulkContactAction(
+    mode: 'sequence' | 'freeform' | 'template',
+  ) {
+    if (selectedCount === 0) {
+      toast.error('Select at least one contact first.');
+      return;
+    }
+
+    setBulkContactActionMode(mode);
+    setBulkContactActionsOpen(true);
+  }
+
   function openAddForm() {
     setEditContact(null);
     setEditContactTags([]);
@@ -741,6 +762,52 @@ const { data, count, error } = await query;
               ? ' from current filters'
               : ''}
           </span>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <GatedButton
+              size="sm"
+              canAct={canEdit}
+              gateReason="start follow-up sequences"
+              onClick={() =>
+                openBulkContactAction('sequence')
+              }
+              disabled={selectedCount === 0}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <PlayCircle className="mr-2 size-3.5" />
+              Follow-up
+            </GatedButton>
+
+            <GatedButton
+              size="sm"
+              variant="outline"
+              canAct={canEdit}
+              gateReason="send free-form WhatsApp messages"
+              onClick={() =>
+                openBulkContactAction('freeform')
+              }
+              disabled={selectedCount === 0}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+            >
+              <Send className="mr-2 size-3.5" />
+              Free-form
+            </GatedButton>
+
+            <GatedButton
+              size="sm"
+              variant="outline"
+              canAct={canEdit}
+              gateReason="send WhatsApp reminder templates"
+              onClick={() =>
+                openBulkContactAction('template')
+              }
+              disabled={selectedCount === 0}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+            >
+              <Bell className="mr-2 size-3.5" />
+              Reminder
+            </GatedButton>
+          </div>
         </div>
 
         <Button
@@ -1064,6 +1131,24 @@ const { data, count, error } = await query;
       />
 
       {/* Contact Detail Sheet */}
+      <BulkContactActionsDialog
+        open={bulkContactActionsOpen}
+        contacts={Object.values(selectedContacts)}
+        initialMode={bulkContactActionMode}
+        onOpenChange={
+          setBulkContactActionsOpen
+        }
+        onCompleted={(mode) => {
+          setSelectedContacts({});
+
+          if (mode === 'sequence') {
+            router.push(
+              '/automations/followups',
+            );
+          }
+        }}
+      />
+
       <StartFollowUpDialog
         open={followupOpen}
         contact={followupContact}
