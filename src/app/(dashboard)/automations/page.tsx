@@ -176,6 +176,44 @@ export default function AutomationsPage() {
         </GatedButton>
       </div>
 
+      <section className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-slate-900 to-slate-950 p-5 shadow-xl shadow-black/20">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <PhoneCall className="h-5 w-5" />
+            </div>
+
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-semibold text-white">
+                  Spa Lead Follow-up
+                </h2>
+                <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                  Fully editable
+                </span>
+              </div>
+
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-400">
+                Assign the lead, create a task and build a multi-step follow-up sequence.
+                Change every wait time and message from the visual builder.
+              </p>
+            </div>
+          </div>
+
+          <Button
+            onClick={() =>
+              router.push(
+                "/automations/new?preset=spa_followup",
+              )
+            }
+            className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Build Sequence
+          </Button>
+        </div>
+      </section>
+
       {showTemplates && (
         <section>
           <h2 className="mb-3 text-sm font-semibold text-slate-300">Quick-start templates</h2>

@@ -13,6 +13,7 @@ import type {
   WaitStepConfig,
   CreateDealStepConfig,
   AssignConversationStepConfig,
+  CreateTaskStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import {
@@ -20,6 +21,7 @@ import {
   RATE_LIMITS,
 } from '@/lib/rate-limit'
 import { engineSendText, engineSendTemplate } from './meta-send'
+import { isWithinCustomerServiceWindow } from './customer-window'
 
 // ------------------------------------------------------------
 // Public API
@@ -36,6 +38,7 @@ export interface AutomationContext {
   tag_id?: string
   /** Agent the conversation was assigned to, for conversation_assigned. */
   agent_id?: string
+  automation_started_at?: string
 }
 
 export interface DispatchInput {
@@ -151,9 +154,66 @@ export async function resumePendingExecution(pending: {
 
   const { data: pendingRow } = await db
     .from('automation_pending_executions')
-    .select('attempt_count, max_attempts')
+    .select(
+      'attempt_count, max_attempts, created_at, cancel_on_customer_reply',
+    )
     .eq('id', pending.id)
     .single()
+
+  if (
+    pendingRow?.cancel_on_customer_reply &&
+    pending.contact_id &&
+    pending.context?.conversation_id
+  ) {
+    const {
+      data: latestCustomerMessage,
+    } = await db
+      .from('messages')
+      .select('created_at')
+      .eq(
+        'conversation_id',
+        pending.context.conversation_id,
+      )
+      .eq(
+        'sender_type',
+        'customer',
+      )
+      .order(
+        'created_at',
+        { ascending: false },
+      )
+      .limit(1)
+      .maybeSingle()
+
+    if (
+      latestCustomerMessage?.created_at &&
+      pendingRow.created_at &&
+      new Date(
+        latestCustomerMessage.created_at,
+      ).getTime() >
+        new Date(
+          pendingRow.created_at,
+        ).getTime()
+    ) {
+      await db
+        .from(
+          'automation_pending_executions',
+        )
+        .update({
+          status: 'cancelled',
+          cancelled_at:
+            new Date().toISOString(),
+          cancel_reason:
+            'customer_reply',
+        })
+        .eq(
+          'id',
+          pending.id,
+        )
+
+      return
+    }
+  }
 
   const { data: automation, error } = await db
     .from('automations')    .select('*')
@@ -161,8 +221,35 @@ export async function resumePendingExecution(pending: {
     .single()
 
   if (error || !automation) {
-    console.error('[automations] resume: missing automation', pending.automation_id, error)
-    await markPending(pending.id, 'failed')
+    console.error(
+      '[automations] resume: missing automation',
+      pending.automation_id,
+      error,
+    )
+    await markPending(
+      pending.id,
+      'failed',
+    )
+    return
+  }
+
+  if (!automation.is_active) {
+    await db
+      .from(
+        'automation_pending_executions',
+      )
+      .update({
+        status: 'cancelled',
+        cancelled_at:
+          new Date().toISOString(),
+        cancel_reason:
+          'automation_disabled',
+      })
+      .eq(
+        'id',
+        pending.id,
+      )
+
     return
   }
 
@@ -202,6 +289,44 @@ export async function resumePendingExecution(pending: {
     )
   }
 }
+}
+
+export async function cancelPendingFollowupsForContact(
+  accountId: string,
+  contactId: string,
+  reason = 'customer_reply',
+): Promise<void> {
+  const db =
+    supabaseAdmin()
+
+  await db
+    .from(
+      'automation_pending_executions',
+    )
+    .update({
+      status:
+        'cancelled',
+      cancelled_at:
+        new Date().toISOString(),
+      cancel_reason:
+        reason,
+    })
+    .eq(
+      'account_id',
+      accountId,
+    )
+    .eq(
+      'contact_id',
+      contactId,
+    )
+    .eq(
+      'status',
+      'pending',
+    )
+    .eq(
+      'cancel_on_customer_reply',
+      true,
+    )
 }
 
 export async function replayAutomation(params: {
@@ -266,7 +391,11 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
   await executeStepsFrom({
     automation,
     contactId: input.contactId ?? null,
-    context: input.context ?? {},
+    context: {
+      ...(input.context ?? {}),
+      automation_started_at:
+        new Date().toISOString(),
+    },
     parentStepId: null,
     branch: null,
     startPosition: 0,
@@ -384,8 +513,13 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
         branch: args.branch,
         next_step_position: step.position + 1,
         context: args.context,
-        run_at: new Date(Date.now() + ms).toISOString(),
+        run_at: new Date(
+          Date.now() + ms,
+        ).toISOString(),
         status: 'pending',
+        cancel_on_customer_reply:
+          !!args.automation
+            .cancel_on_customer_reply,
       })
       results.push({
         step_id: step.id,
@@ -455,18 +589,193 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
   switch (step.step_type) {
     case 'send_message': {
-      const cfg = step.step_config as SendMessageStepConfig
-      if (!args.contactId) throw new Error('send_message needs a contact')
-      const text = interpolate(cfg.text, args)
-      if (!text.trim()) throw new Error('send_message has empty text')
-      const conversationId = await resolveConversationId(args)
-      const { whatsapp_message_id } = await engineSendText({
-        accountId: args.automation.account_id,
-        userId: args.automation.user_id,
+      const cfg =
+        step.step_config as SendMessageStepConfig
+
+      if (!args.contactId) {
+        throw new Error(
+          'send_message needs a contact',
+        )
+      }
+
+      const text =
+        interpolate(
+          cfg.text,
+          args,
+        )
+
+      if (!text.trim()) {
+        throw new Error(
+          'send_message has empty text',
+        )
+      }
+
+      const conversationId =
+        await resolveConversationId(
+          args,
+        )
+
+      // Race-safety: if customer replied after
+      // automation started, never send the follow-up.
+      if (
+        args.automation
+          .cancel_on_customer_reply &&
+        args.context
+          .automation_started_at
+      ) {
+        const {
+          data: latestCustomerMessage,
+        } = await db
+          .from('messages')
+          .select('created_at')
+          .eq(
+            'conversation_id',
+            conversationId,
+          )
+          .eq(
+            'sender_type',
+            'customer',
+          )
+          .order(
+            'created_at',
+            {
+              ascending: false,
+            },
+          )
+          .limit(1)
+          .maybeSingle()
+
+        if (
+          latestCustomerMessage?.created_at &&
+          new Date(
+            latestCustomerMessage.created_at,
+          ).getTime() >
+            new Date(
+              args.context
+                .automation_started_at,
+            ).getTime()
+        ) {
+          return 'cancelled: customer replied'
+        }
+      }
+
+      const {
+        data: latestCustomerMessage,
+      } = await db
+        .from('messages')
+        .select('created_at')
+        .eq(
+          'conversation_id',
+          conversationId,
+        )
+        .eq(
+          'sender_type',
+          'customer',
+        )
+        .order(
+          'created_at',
+          {
+            ascending: false,
+          },
+        )
+        .limit(1)
+        .maybeSingle()
+
+      const insideWindow =
+        isWithinCustomerServiceWindow(
+          latestCustomerMessage?.created_at,
+        )
+
+      // Outside the 24h window:
+      // approved template if configured,
+      // otherwise create an internal task.
+      if (!insideWindow) {
+        if (
+          cfg.fallback_template_name
+        ) {
+          const result =
+            await engineSendTemplate({
+              accountId:
+                args.automation
+                  .account_id,
+              userId:
+                args.automation
+                  .user_id,
+              conversationId,
+              contactId:
+                args.contactId,
+              templateName:
+                cfg.fallback_template_name,
+              language:
+                cfg.fallback_template_language ??
+                'en_US',
+              params: [],
+            })
+
+          return `template sent via Meta (${result.whatsapp_message_id})`
+        }
+
+        const {
+          data: contact,
+        } = await db
+          .from('contacts')
+          .select('assigned_to')
+          .eq(
+            'account_id',
+            args.automation
+              .account_id,
+          )
+          .eq(
+            'id',
+            args.contactId,
+          )
+          .maybeSingle()
+
+        await db
+          .from('tasks')
+          .insert({
+            account_id:
+              args.automation
+                .account_id,
+            created_by:
+              args.automation
+                .user_id,
+            contact_id:
+              args.contactId,
+            conversation_id:
+              conversationId,
+            title:
+              cfg.fallback_task_title ??
+              'Follow up lead',
+            description:
+              'WhatsApp 24-hour customer-service window expired. Use an approved template or contact the lead manually.',
+            priority:
+              'high',
+            status:
+              'pending',
+            due_at:
+              new Date().toISOString(),
+            assigned_to:
+              contact?.assigned_to ??
+              null,
+          })
+
+        return 'deferred to internal follow-up task'
+      }
+
+      const {
+        whatsapp_message_id,
+      } = await engineSendText({
+        accountId:
+          args.automation.account_id,
+        userId:
+          args.automation.user_id,
         conversationId,
-        contactId: args.contactId,
+        contactId:
+          args.contactId,
         text,
       })
+
       return `sent via Meta (${whatsapp_message_id})`
     }
 
@@ -538,22 +847,135 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('assign_conversation needs a contact')
       let agentId = cfg.agent_id
       if (cfg.mode === 'round_robin') {
-        // Pick any member of the account. The existing implementation
-        // only ever returned the automation's author; preserving that
-        // shape until a real round-robin algorithm replaces it.
-        const { data: profiles } = await db
+        const {
+          data: profiles,
+        } = await db
           .from('profiles')
-          .select('user_id')
-          .eq('account_id', args.automation.account_id)
-          .limit(1)
-        agentId = profiles?.[0]?.user_id
+          .select(
+            'user_id, created_at',
+          )
+          .eq(
+            'account_id',
+            args.automation
+              .account_id,
+          )
+          .order(
+            'created_at',
+            {
+              ascending: true,
+            },
+          )
+
+        if (
+          profiles &&
+          profiles.length > 0
+        ) {
+          const ranked =
+            await Promise.all(
+              profiles.map(
+                async (
+                  profile,
+                ) => {
+                  const {
+                    count,
+                  } =
+                    await db
+                      .from(
+                        'contacts',
+                      )
+                      .select(
+                        'id',
+                        {
+                          count:
+                            'exact',
+                          head: true,
+                        },
+                      )
+                      .eq(
+                        'account_id',
+                        args.automation
+                          .account_id,
+                      )
+                      .eq(
+                        'assigned_to',
+                        profile.user_id,
+                      )
+
+                  return {
+                    userId:
+                      profile.user_id,
+                    count:
+                      count ?? 0,
+                    createdAt:
+                      profile.created_at,
+                  }
+                },
+              ),
+            )
+
+          ranked.sort(
+            (
+              a,
+              b,
+            ) => {
+              if (
+                a.count !==
+                b.count
+              ) {
+                return (
+                  a.count -
+                  b.count
+                )
+              }
+
+              return (
+                new Date(
+                  a.createdAt,
+                ).getTime() -
+                new Date(
+                  b.createdAt,
+                ).getTime()
+              )
+            },
+          )
+
+          agentId =
+            ranked[0]?.userId
+        }
       }
       if (!agentId) return 'no agent resolved'
       await db
         .from('conversations')
-        .update({ assigned_agent_id: agentId })
-        .eq('account_id', args.automation.account_id)
-        .eq('contact_id', args.contactId)
+        .update({
+          assigned_agent_id:
+            agentId,
+        })
+        .eq(
+          'account_id',
+          args.automation.account_id,
+        )
+        .eq(
+          'contact_id',
+          args.contactId,
+        )
+
+      await db
+        .from('contacts')
+        .update({
+          assigned_to:
+            agentId,
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          'account_id',
+          args.automation.account_id,
+        )
+        .eq(
+          'id',
+          args.contactId,
+        )
+
       return `assigned to ${agentId}`
     }
 
@@ -610,64 +1032,151 @@ return 'deal created'
 
 
     case 'create_task': {
-  const cfg = step.step_config as any
+      const cfg =
+        step.step_config as CreateTaskStepConfig
 
-  const dueAt =
-    cfg.due_in_minutes
-      ? new Date(
-          Date.now() + cfg.due_in_minutes * 60 * 1000
-        ).toISOString()
-      : null
+      const delayMs =
+        cfg.due_in_minutes
+          ? cfg.due_in_minutes *
+            60 *
+            1000
+          : cfg.due_in_hours
+            ? cfg.due_in_hours *
+              60 *
+              60 *
+              1000
+            : cfg.due_in_days
+              ? cfg.due_in_days *
+                24 *
+                60 *
+                60 *
+                1000
+              : 0
 
-      const existingTask = await db
-  .from('tasks')
-  .select('id')
-  .eq('contact_id', args.contactId)
-  .eq('status', 'pending')
-  .eq(
-    'title',
-    interpolate(cfg.title ?? 'Follow Up', args)
-  )
-  .limit(1)
-  .maybeSingle()
+      const dueAt =
+        delayMs > 0
+          ? new Date(
+              Date.now() +
+                delayMs,
+            ).toISOString()
+          : null
 
-if (existingTask.data) {
-  return 'task already exists'
-}
+      const taskTitle =
+        interpolate(
+          cfg.title ??
+            'Follow Up',
+          args,
+        )
 
-  const { data, error } = await db
-    .from('tasks')
-    .insert({
-      account_id: args.automation.account_id,
-      created_by: args.automation.user_id,
-      contact_id: args.contactId ?? null,
-      conversation_id:
-        args.context.conversation_id ?? null,
-      title: interpolate(
-        cfg.title ?? 'Follow Up',
-        args
-      ),
-      description: cfg.description
-        ? interpolate(cfg.description, args)
-        : null,
-      priority: cfg.priority ?? 'medium',
-      status: 'pending',
-      due_at: dueAt,
-      assigned_to:
+      const existingTask =
+        await db
+          .from('tasks')
+          .select('id')
+          .eq(
+            'account_id',
+            args.automation.account_id,
+          )
+          .eq(
+            'contact_id',
+            args.contactId,
+          )
+          .eq(
+            'status',
+            'pending',
+          )
+          .eq(
+            'title',
+            taskTitle,
+          )
+          .limit(1)
+          .maybeSingle()
+
+      if (existingTask.data) {
+        return 'task already exists'
+      }
+
+      let assignedTo =
         cfg.assigned_to &&
-        String(cfg.assigned_to).trim() !== ''
+        String(
+          cfg.assigned_to,
+        ).trim() !== ''
           ? cfg.assigned_to
-          : null,
-    })
-    .select()
-    .single()
+          : null
 
-  if (error) {
-    throw new Error(error.message)
-  }
+      if (
+        !assignedTo &&
+        args.contactId
+      ) {
+        const {
+          data: contact,
+        } = await db
+          .from('contacts')
+          .select('assigned_to')
+          .eq(
+            'account_id',
+            args.automation
+              .account_id,
+          )
+          .eq(
+            'id',
+            args.contactId,
+          )
+          .maybeSingle()
 
-  return `task created (${data.id})`
-}
+        assignedTo =
+          contact?.assigned_to ??
+          null
+      }
+
+      const {
+        data,
+        error,
+      } = await db
+        .from('tasks')
+        .insert({
+          account_id:
+            args.automation
+              .account_id,
+          created_by:
+            args.automation
+              .user_id,
+          contact_id:
+            args.contactId ??
+            null,
+          conversation_id:
+            args.context
+              .conversation_id ??
+            null,
+          title:
+            taskTitle,
+          description:
+            cfg.description
+              ? interpolate(
+                  cfg.description,
+                  args,
+                )
+              : null,
+          priority:
+            cfg.priority ??
+            'medium',
+          status:
+            'pending',
+          due_at:
+            dueAt,
+          assigned_to:
+            assignedTo,
+        })
+        .select()
+        .single()
+
+      if (error) {
+        throw new Error(
+          error.message,
+        )
+      }
+
+      return `task created (${data.id})`
+    }
 
     case 'send_webhook': {
       const cfg = step.step_config as SendWebhookStepConfig

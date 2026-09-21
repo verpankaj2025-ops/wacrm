@@ -448,6 +448,9 @@ export type AutomationTriggerConfig =
 
 export interface SendMessageStepConfig {
   text: string;
+  fallback_template_name?: string;
+  fallback_template_language?: string;
+  fallback_task_title?: string;
 }
 
 export interface SendTemplateStepConfig {
@@ -483,6 +486,9 @@ export interface CreateTaskStepConfig {
   description?: string;
   priority?: string;
   assigned_to?: string;
+  due_in_minutes?: number;
+  due_in_hours?: number;
+  due_in_days?: number;
 }
 
 export interface WaitStepConfig {
@@ -538,6 +544,7 @@ export interface Automation {
   trigger_type: AutomationTriggerType;
   trigger_config: AutomationTriggerConfig;
   is_active: boolean;
+  cancel_on_customer_reply?: boolean;
   execution_count: number;
   last_executed_at?: string | null;
   created_at: string;

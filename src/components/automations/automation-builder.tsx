@@ -25,6 +25,7 @@ import {
   Loader2,
   ArrowDown,
   ArrowUp,
+  Clock,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -296,7 +297,35 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
       {/* Canvas */}
       <div className="relative flex-1 overflow-y-auto">
         <div className="absolute inset-0 bg-[radial-gradient(circle,#1e293b_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none" />
-        <div className="relative mx-auto flex max-w-2xl flex-col items-center gap-0 px-4 py-10">
+        <div className="relative mx-auto flex w-full max-w-3xl flex-col items-center gap-0 px-4 py-8">
+          <div className="mb-4 flex w-full flex-wrap items-center justify-center gap-2 text-[10px]">
+            <SequenceStat
+              label="Steps"
+              value={countSteps(state.steps)}
+            />
+            <SequenceStat
+              label="Waits"
+              value={countStepType(
+                state.steps,
+                "wait",
+              )}
+            />
+            <SequenceStat
+              label="Messages"
+              value={countStepType(
+                state.steps,
+                "send_message",
+              )}
+            />
+            <SequenceStat
+              label="Tasks"
+              value={countStepType(
+                state.steps,
+                "create_task",
+              )}
+            />
+          </div>
+
           <TriggerCard
             type={state.trigger_type}
             config={state.trigger_config}
@@ -315,6 +344,67 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
           />
         </div>
       </div>
+    </div>
+  )
+}
+
+function countSteps(
+  steps: BuilderStep[],
+): number {
+  return steps.reduce(
+    (total, step) =>
+      total +
+      1 +
+      countSteps(
+        step.branches?.yes ??
+          [],
+      ) +
+      countSteps(
+        step.branches?.no ??
+          [],
+      ),
+    0,
+  )
+}
+
+function countStepType(
+  steps: BuilderStep[],
+  type: AutomationStepType,
+): number {
+  return steps.reduce(
+    (total, step) =>
+      total +
+      (step.step_type ===
+      type
+        ? 1
+        : 0) +
+      countStepType(
+        step.branches?.yes ??
+          [],
+        type,
+      ) +
+      countStepType(
+        step.branches?.no ??
+          [],
+        type,
+      ),
+    0,
+  )
+}
+
+function SequenceStat({
+  label,
+  value,
+}: {
+  label: string
+  value: number
+}) {
+  return (
+    <div className="rounded-full border border-slate-800 bg-slate-900/90 px-3 py-1 text-slate-400">
+      <span className="font-semibold text-white">
+        {value}
+      </span>{" "}
+      {label}
     </div>
   )
 }
@@ -546,8 +636,10 @@ function StepRenderer({
       <div className={cn("z-10 flex flex-col", width)}>
         <div
           className={cn(
-            "rounded-lg border border-slate-800 border-l-4 bg-slate-900 shadow-lg",
+            "overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/95 shadow-xl shadow-black/20 transition-all hover:border-slate-600",
             meta.border,
+            expanded &&
+              "ring-1 ring-primary/20",
           )}
         >
           <button
@@ -555,8 +647,16 @@ function StepRenderer({
             onClick={() => props.setExpandedId(expanded ? null : step.cid)}
             className="flex w-full items-center gap-3 px-4 py-3 text-left"
           >
-            <GripVertical className="h-4 w-4 flex-shrink-0 text-slate-600" aria-hidden />
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-800 text-slate-300">
+            <div className="flex h-7 min-w-7 items-center justify-center rounded-full bg-slate-800 px-2 text-[10px] font-bold text-slate-400">
+              {String(index + 1).padStart(2, "0")}
+            </div>
+
+            <GripVertical
+              className="h-4 w-4 flex-shrink-0 text-slate-600"
+              aria-hidden
+            />
+
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 text-slate-300">
               <Icon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
@@ -681,7 +781,7 @@ function AddButton({ onPick }: { onPick: (t: AutomationStepType) => void }) {
       <div className="h-4 w-[2px] bg-slate-700" aria-hidden />
       <DropdownMenu>
         <DropdownMenuTrigger
-          className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed border-slate-700 bg-slate-950 text-slate-400 transition-colors hover:border-primary hover:bg-primary/10 hover:text-primary data-[popup-open]:border-primary data-[popup-open]:bg-primary/20 data-[popup-open]:text-primary"
+          className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-dashed border-slate-700 bg-slate-950 text-slate-400 shadow-lg transition-all hover:scale-105 hover:border-primary hover:bg-primary/10 hover:text-primary data-[popup-open]:border-primary data-[popup-open]:bg-primary/20 data-[popup-open]:text-primary"
           aria-label="Add step"
         >
           <Plus className="h-4 w-4" />
@@ -724,14 +824,84 @@ function StepEditor({
   switch (step.step_type) {
     case "send_message":
       return (
-        <FieldBlock label="Message text">
-          <Textarea
-            value={(cfg.text as string) ?? ""}
-            onChange={(e) => set({ text: e.target.value })}
-            placeholder="Hi! Thanks for reaching out…"
-            className="min-h-24 bg-slate-800 text-white"
-          />
-        </FieldBlock>
+        <div className="space-y-3">
+          <FieldBlock label="Message text">
+            <Textarea
+              value={
+                (cfg.text as string) ??
+                ""
+              }
+              onChange={(e) =>
+                set({
+                  text:
+                    e.target.value,
+                })
+              }
+              placeholder="Hi! Thanks for reaching out…"
+              className="min-h-24 bg-slate-800 text-white"
+            />
+          </FieldBlock>
+
+          <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <Clock className="h-3.5 w-3.5 text-primary" />
+              <span className="text-xs font-semibold text-white">
+                24h+ fallback
+              </span>
+            </div>
+
+            <FieldBlock label="Approved template name">
+              <Input
+                value={
+                  (cfg.fallback_template_name as string) ??
+                  ""
+                }
+                onChange={(e) =>
+                  set({
+                    fallback_template_name:
+                      e.target.value,
+                  })
+                }
+                placeholder="spa_followup_24h"
+                className="bg-slate-800 text-white"
+              />
+            </FieldBlock>
+
+            <FieldBlock label="Template language">
+              <Input
+                value={
+                  (cfg.fallback_template_language as string) ??
+                  "en_US"
+                }
+                onChange={(e) =>
+                  set({
+                    fallback_template_language:
+                      e.target.value,
+                  })
+                }
+                placeholder="en_US"
+                className="bg-slate-800 text-white"
+              />
+            </FieldBlock>
+
+            <FieldBlock label="Fallback task">
+              <Input
+                value={
+                  (cfg.fallback_task_title as string) ??
+                  ""
+                }
+                onChange={(e) =>
+                  set({
+                    fallback_task_title:
+                      e.target.value,
+                  })
+                }
+                placeholder="Follow up lead manually"
+                className="bg-slate-800 text-white"
+              />
+            </FieldBlock>
+          </div>
+        </div>
       )
     case "send_template":
       return (
@@ -844,91 +1014,301 @@ function StepEditor({
           </FieldBlock>
         </>
       )
-      case "create_task":
-  return (
-    <>
-      <FieldBlock label="Task Title">
-        <Input
-          value={(cfg.title as string) ?? ""}
-          onChange={(e) => set({ title: e.target.value })}
-          className="bg-slate-800 text-white"
-        />
-      </FieldBlock>
-
-      <FieldBlock label="Description">
-        <Textarea
-          value={(cfg.description as string) ?? ""}
-          onChange={(e) =>
-            set({ description: e.target.value })
-          }
-          className="bg-slate-800 text-white"
-        />
-      </FieldBlock>
-
-      <FieldBlock label="Priority">
-        <select
-          value={(cfg.priority as string) ?? "medium"}
-          onChange={(e) =>
-            set({ priority: e.target.value })
-          }
-          className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white"
-        >
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
-      </FieldBlock>
-
-      <FieldBlock label="Assigned User Id">
-        <Input
-          value={(cfg.assigned_to as string) ?? ""}
-          onChange={(e) =>
-            set({ assigned_to: e.target.value })
-          }
-          className="bg-slate-800 text-white"
-        />
-      </FieldBlock>
-
-      <FieldBlock label="Due After Hours">
-  <Input
-    type="number"
-    value={(cfg.due_in_hours as number) ?? 24}
-    onChange={(e) =>
-      set({
-        due_in_hours: Number(e.target.value),
-      })
-    }
-    className="bg-slate-800 text-white"
-  />
-</FieldBlock>
-
-    </>
-  )
-    case "wait":
+    case "create_task":
       return (
-        <div className="grid grid-cols-2 gap-2">
-          <FieldBlock label="Amount">
+        <>
+          <FieldBlock label="Task title">
             <Input
-              type="number"
-              min={1}
-              value={(cfg.amount as number) ?? 1}
-              onChange={(e) => set({ amount: Math.max(1, Number(e.target.value)) })}
+              value={
+                (cfg.title as string) ?? ""
+              }
+              onChange={(e) =>
+                set({
+                  title:
+                    e.target.value,
+                })
+              }
+              placeholder="Follow up new spa lead"
               className="bg-slate-800 text-white"
             />
           </FieldBlock>
-          <FieldBlock label="Unit">
-            <select
-              value={(cfg.unit as string) ?? "hours"}
-              onChange={(e) => set({ unit: e.target.value })}
-              className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white"
-            >
-              <option value="minutes">Minutes</option>
-              <option value="hours">Hours</option>
-              <option value="days">Days</option>
-            </select>
+
+          <FieldBlock label="Description">
+            <Textarea
+              value={
+                (cfg.description as string) ?? ""
+              }
+              onChange={(e) =>
+                set({
+                  description:
+                    e.target.value,
+                })
+              }
+              placeholder="Review lead and follow up."
+              className="bg-slate-800 text-white"
+            />
           </FieldBlock>
+
+          <div className="grid grid-cols-2 gap-2">
+            <FieldBlock label="Priority">
+              <select
+                value={
+                  (cfg.priority as string) ??
+                  "medium"
+                }
+                onChange={(e) =>
+                  set({
+                    priority:
+                      e.target.value,
+                  })
+                }
+                className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white"
+              >
+                <option value="low">
+                  Low
+                </option>
+                <option value="medium">
+                  Medium
+                </option>
+                <option value="high">
+                  High
+                </option>
+              </select>
+            </FieldBlock>
+
+            <FieldBlock label="Assign">
+              <select
+                value={
+                  (cfg.assigned_to as string) ||
+                  "conversation_owner"
+                }
+                onChange={(e) =>
+                  set({
+                    assigned_to:
+                      e.target.value ===
+                      "conversation_owner"
+                        ? ""
+                        : e.target.value,
+                  })
+                }
+                className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white"
+              >
+                <option value="conversation_owner">
+                  Conversation owner
+                </option>
+              </select>
+            </FieldBlock>
+          </div>
+
+          <FieldBlock label="Due after">
+            <div className="grid grid-cols-[1fr_120px] gap-2">
+              <Input
+                type="number"
+                min={1}
+                value={
+                  (
+                    cfg.due_in_minutes ??
+                    cfg.due_in_hours ??
+                    cfg.due_in_days ??
+                    30
+                  ) as number
+                }
+                onChange={(e) => {
+                  const amount = Math.max(
+                    1,
+                    Number(
+                      e.target.value,
+                    ),
+                  )
+
+                  const unit =
+                    (cfg.due_unit as string) ??
+                    (cfg.due_in_hours
+                      ? "hours"
+                      : cfg.due_in_days
+                        ? "days"
+                        : "minutes")
+
+                  set({
+                    due_in_minutes:
+                      unit === "minutes"
+                        ? amount
+                        : 0,
+                    due_in_hours:
+                      unit === "hours"
+                        ? amount
+                        : 0,
+                    due_in_days:
+                      unit === "days"
+                        ? amount
+                        : 0,
+                    due_unit:
+                      unit,
+                  })
+                }}
+                className="bg-slate-800 text-white"
+              />
+
+              <select
+                value={
+                  (cfg.due_unit as string) ??
+                  "minutes"
+                }
+                onChange={(e) => {
+                  const unit =
+                    e.target.value
+
+                  const amount = Math.max(
+                    1,
+                    Number(
+                      cfg.due_in_minutes ??
+                        cfg.due_in_hours ??
+                        cfg.due_in_days ??
+                        30,
+                    ),
+                  )
+
+                  set({
+                    due_in_minutes:
+                      unit === "minutes"
+                        ? amount
+                        : 0,
+                    due_in_hours:
+                      unit === "hours"
+                        ? amount
+                        : 0,
+                    due_in_days:
+                      unit === "days"
+                        ? amount
+                        : 0,
+                    due_unit:
+                      unit,
+                  })
+                }}
+                className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white"
+              >
+                <option value="minutes">
+                  Minutes
+                </option>
+                <option value="hours">
+                  Hours
+                </option>
+                <option value="days">
+                  Days
+                </option>
+              </select>
+            </div>
+          </FieldBlock>
+        </>
+      )
+    case "wait": {
+      const amount =
+        Number(cfg.amount) > 0
+          ? Number(cfg.amount)
+          : 1
+
+      const unit =
+        (cfg.unit as string) ??
+        "hours"
+
+      const presets = [
+        { label: "15m", amount: 15, unit: "minutes" },
+        { label: "30m", amount: 30, unit: "minutes" },
+        { label: "1h", amount: 1, unit: "hours" },
+        { label: "3h", amount: 3, unit: "hours" },
+        { label: "6h", amount: 6, unit: "hours" },
+        { label: "12h", amount: 12, unit: "hours" },
+        { label: "18h", amount: 18, unit: "hours" },
+        { label: "24h", amount: 24, unit: "hours" },
+        { label: "48h", amount: 48, unit: "hours" },
+      ] as const
+
+      return (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <FieldBlock label="Wait amount">
+              <Input
+                type="number"
+                min={1}
+                value={amount}
+                onChange={(e) =>
+                  set({
+                    amount: Math.max(
+                      1,
+                      Number(
+                        e.target.value,
+                      ),
+                    ),
+                  })
+                }
+                className="bg-slate-800 text-white"
+              />
+            </FieldBlock>
+
+            <FieldBlock label="Unit">
+              <select
+                value={unit}
+                onChange={(e) =>
+                  set({
+                    unit:
+                      e.target.value,
+                  })
+                }
+                className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white"
+              >
+                <option value="minutes">
+                  Minutes
+                </option>
+                <option value="hours">
+                  Hours
+                </option>
+                <option value="days">
+                  Days
+                </option>
+              </select>
+            </FieldBlock>
+          </div>
+
+          <div>
+            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+              Quick timing
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {presets.map(
+                (preset) => (
+                  <button
+                    key={
+                      preset.label
+                    }
+                    type="button"
+                    onClick={() =>
+                      set({
+                        amount:
+                          preset.amount,
+                        unit:
+                          preset.unit,
+                      })
+                    }
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-[10px] font-medium transition-all",
+                      amount ===
+                        preset.amount &&
+                        unit ===
+                          preset.unit
+                        ? "border-primary/60 bg-primary/15 text-primary"
+                        : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500 hover:text-white",
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                ),
+              )}
+            </div>
+          </div>
         </div>
       )
+    }
     case "condition":
       return (
         <>
