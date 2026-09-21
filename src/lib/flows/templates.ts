@@ -289,10 +289,83 @@ const LEAD_CAPTURE: FlowTemplate = {
 // Registry
 // ============================================================
 
+
+// ============================================================
+// 4. Spa booking — service + date + time, then human handoff
+// ============================================================
+
+const SPA_BOOKING: FlowTemplate = {
+  slug: "spa_booking",
+  name: "Spa Booking Assistant",
+  description:
+    "Collect spa service, preferred date and preferred time, then hand the lead to the team for confirmation.",
+  icon: "MessageSquare",
+  trigger_type: "first_inbound_message",
+  trigger_config: {},
+  entry_node_id: "start",
+  nodes: [
+    {
+      node_key: "start",
+      node_type: "start",
+      config: {
+        next_node_key: "welcome",
+      } as StartNodeConfig,
+    },
+    {
+      node_key: "welcome",
+      node_type: "send_message",
+      config: {
+        text:
+          "Welcome to Relaxio Spa 👋 I can help you with your spa booking.",
+        next_node_key: "ask_service",
+      } as SendMessageNodeConfig,
+    },
+    {
+      node_key: "ask_service",
+      node_type: "collect_input",
+      config: {
+        prompt_text:
+          "Which service are you interested in? For example: Thai Massage, Balinese Massage, Deep Tissue, Couples Spa or Aromatherapy.",
+        var_key: "preferred_service",
+        next_node_key: "ask_date",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "ask_date",
+      node_type: "collect_input",
+      config: {
+        prompt_text:
+          "Great 😊 What date would you like to visit?",
+        var_key: "preferred_date",
+        next_node_key: "ask_time",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "ask_time",
+      node_type: "collect_input",
+      config: {
+        prompt_text:
+          "And what time would you prefer?",
+        var_key: "preferred_time",
+        next_node_key: "handoff",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "handoff",
+      node_type: "handoff",
+      config: {
+        note:
+          "Spa booking enquiry — service={{vars.preferred_service}}, date={{vars.preferred_date}}, time={{vars.preferred_time}}.",
+      } as HandoffNodeConfig,
+    },
+  ],
+};
+
 const TEMPLATES: Record<string, FlowTemplate> = {
   welcome_menu: WELCOME_MENU,
   faq_bot: FAQ_BOT,
   lead_capture: LEAD_CAPTURE,
+  spa_booking: SPA_BOOKING,
 };
 
 export function getFlowTemplate(slug: string): FlowTemplate | null {
