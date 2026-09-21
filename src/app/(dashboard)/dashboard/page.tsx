@@ -26,6 +26,7 @@ import type {
   MetricsBundle,
   PipelineDonutData,
   ResponseTimeSummary,
+  TeamPerformanceSummary,
 } from '@/lib/dashboard/types'
 
 import { MetricCard } from '@/components/dashboard/metric-card'
@@ -63,7 +64,7 @@ export default function DashboardPage() {
 
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
-  const [teamData, setTeamData] = useState<any>(null)
+  const [teamData, setTeamData] = useState<TeamPerformanceSummary | null>(null)
 
   const loadAll = useCallback(() => {
     const db = createClient()

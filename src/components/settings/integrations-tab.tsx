@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -36,11 +36,7 @@ const [pageId, setPageId] = useState('');
 const [formId, setFormId] = useState('');
 const [accessToken, setAccessToken] = useState('');
 
-useEffect(() => {
-loadIntegrations();
-}, []);
-
-async function loadIntegrations() {
+const loadIntegrations = useCallback(async () => {
 setLoading(true);
 
 const { data } = await supabase
@@ -53,8 +49,12 @@ if (data) {
 }
 
 setLoading(false);
+}, [supabase]);
 
-}
+useEffect(() => {
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  void loadIntegrations();
+}, [loadIntegrations]);
 
 async function connectMetaLeadAds() {
 if (!accountId) {

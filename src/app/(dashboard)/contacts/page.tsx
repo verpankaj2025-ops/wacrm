@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
@@ -40,7 +41,10 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
+  Download,
+  MessageCircle,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
@@ -60,6 +64,7 @@ type ProfileLite = {
 
 export default function ContactsPage() {
   const supabase = createClient();
+  const router = useRouter();
   const canEdit = useCan('send-messages');
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
@@ -91,6 +96,13 @@ const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
 
 const [profiles, setProfiles] = useState<ProfileLite[]>([]);
 
+const [selectedContacts, setSelectedContacts] = useState<
+  Record<string, ContactWithTags>
+>({});
+
+const [selectingAll, setSelectingAll] = useState(false);
+const [downloadingSelected, setDownloadingSelected] = useState(false);
+
 const fetchTags = useCallback(async () => {
 const { data } = await supabase.from('tags').select('*');
     if (data) {
@@ -99,6 +111,223 @@ const map: Record<string, Tag> = {};
       setTagsMap(map);
     }
   }, [supabase]);
+
+const loadAllFilteredContacts = useCallback(async () => {
+  const batchSize = 500;
+  let offset = 0;
+  const rows: ContactWithTags[] = [];
+
+  while (true) {
+    let query = supabase
+      .from('contacts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + batchSize - 1);
+
+    if (search.trim()) {
+      const term = `%${search.trim()}%`;
+      query = query.or(
+        `name.ilike.${term},phone.ilike.${term},email.ilike.${term}`,
+      );
+    }
+
+    if (leadFilter === 'assigned') {
+      query = query.not('assigned_to', 'is', null);
+    }
+
+    if (leadFilter === 'unassigned') {
+      query = query.is('assigned_to', null);
+    }
+
+    if (statusFilter !== 'all') {
+      query = query.eq('lead_status', statusFilter);
+    }
+
+    if (sourceFilter !== 'all') {
+      query = query.eq('lead_source', sourceFilter);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const pageRows = (data ?? []) as ContactWithTags[];
+    rows.push(...pageRows);
+
+    if (pageRows.length < batchSize) {
+      break;
+    }
+
+    offset += batchSize;
+  }
+
+  return rows;
+}, [
+  supabase,
+  search,
+  leadFilter,
+  statusFilter,
+  sourceFilter,
+]);
+
+const toggleContactSelection = useCallback(
+  (contact: ContactWithTags) => {
+    setSelectedContacts((prev) => {
+      const next = { ...prev };
+
+      if (next[contact.id]) {
+        delete next[contact.id];
+      } else {
+        next[contact.id] = contact;
+      }
+
+      return next;
+    });
+  },
+  [],
+);
+
+const handleSelectAll = useCallback(async () => {
+  setSelectingAll(true);
+
+  try {
+    const rows = await loadAllFilteredContacts();
+
+    setSelectedContacts((prev) => {
+      const next = { ...prev };
+
+      for (const contact of rows) {
+        next[contact.id] = contact;
+      }
+
+      return next;
+    });
+
+    toast.success(
+      `${rows.length} contacts selected from the current filtered list.`,
+    );
+  } catch (error) {
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : 'Failed to select contacts.',
+    );
+  } finally {
+    setSelectingAll(false);
+  }
+}, [loadAllFilteredContacts]);
+
+const handleDeselectAll = useCallback(() => {
+  setSelectedContacts({});
+  toast.success('All selections cleared.');
+}, []);
+
+const handleDownloadSelected = useCallback(async () => {
+  const ids = Object.keys(selectedContacts);
+
+  if (ids.length === 0) {
+    toast.error('Select at least one contact first.');
+    return;
+  }
+
+  setDownloadingSelected(true);
+
+  try {
+    const selectedRows: ContactWithTags[] = [];
+    const batchSize = 500;
+
+    for (let index = 0; index < ids.length; index += batchSize) {
+      const batch = ids.slice(index, index + batchSize);
+
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .in('id', batch)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      selectedRows.push(
+        ...((data ?? []) as ContactWithTags[]),
+      );
+    }
+
+    const rows = selectedRows.map((contact) => ({
+      ID: contact.id,
+      Name: contact.name ?? '',
+      Phone: contact.phone ?? '',
+      Email: contact.email ?? '',
+      Company: contact.company ?? '',
+      'Lead Status': contact.lead_status ?? '',
+      'Lead Source': contact.lead_source ?? '',
+      'Assigned To':
+        profiles.find(
+          (profile) =>
+            profile.user_id === contact.assigned_to,
+        )?.full_name ?? 'Unassigned',
+      'Tags':
+        contact.tags?.map((tag) => tag.name).join(', ') ?? '',
+      'Created At': contact.created_at ?? '',
+      'Updated At': contact.updated_at ?? '',
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+
+    worksheet['!cols'] = [
+      { wch: 38 },
+      { wch: 26 },
+      { wch: 20 },
+      { wch: 30 },
+      { wch: 24 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 22 },
+      { wch: 35 },
+      { wch: 24 },
+      { wch: 24 },
+    ];
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      'Contacts',
+    );
+
+    const stamp = new Date()
+      .toISOString()
+      .slice(0, 10);
+
+    XLSX.writeFile(
+      workbook,
+      `WACRM_Selected_Contacts_${stamp}.xlsx`,
+    );
+
+    toast.success(
+      `${selectedRows.length} contacts downloaded.`,
+    );
+  } catch (error) {
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : 'Failed to download selected contacts.',
+    );
+  } finally {
+    setDownloadingSelected(false);
+  }
+}, [selectedContacts, supabase, profiles]);
+
+const selectedCount = Object.keys(selectedContacts).length;
+
+const allVisibleSelected =
+  contacts.length > 0 &&
+  contacts.every(
+    (contact) => !!selectedContacts[contact.id],
+  );
 
 const fetchContacts = useCallback(async () => {
     setLoading(true);
@@ -114,24 +343,26 @@ const to = from + PAGE_SIZE - 1;
 
     if (search.trim()) {
       const term = `%${search.trim()}%`;
-      query = query.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
+      query = query.or(
+        `name.ilike.${term},phone.ilike.${term},email.ilike.${term}`,
+      );
     }
 
-if (leadFilter === 'assigned') {
-  query = query.not('assigned_to', 'is', null);
-}
+    if (leadFilter === 'assigned') {
+      query = query.not('assigned_to', 'is', null);
+    }
 
-if (leadFilter === 'unassigned') {
-  query = query.is('assigned_to', null);
-}
+    if (leadFilter === 'unassigned') {
+      query = query.is('assigned_to', null);
+    }
 
-if (statusFilter !== 'all') {
-  query = query.eq('lead_status', statusFilter);
-}
+    if (statusFilter !== 'all') {
+      query = query.eq('lead_status', statusFilter);
+    }
 
-if (sourceFilter !== 'all') {
-  query = query.eq('lead_source', sourceFilter);
-}
+    if (sourceFilter !== 'all') {
+      query = query.eq('lead_source', sourceFilter);
+    }
 
 const { data, count, error } = await query;
 
@@ -186,12 +417,10 @@ const { data, count, error } = await query;
   // synchronously in the effect body, so the cascade the lint rule
   // warns about doesn't apply here.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTags();
   }, [fetchTags]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
 
@@ -227,6 +456,81 @@ const { data, count, error } = await query;
     setDetailOpen(true);
   }
 
+  async function openInbox(contact: Contact) {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        toast.error('Please login again.');
+        return;
+      }
+
+      const { data: existing, error: existingError } =
+        await supabase
+          .from('conversations')
+          .select('id')
+          .eq('contact_id', contact.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+      if (existingError) {
+        throw new Error(existingError.message);
+      }
+
+      if (existing?.id) {
+        router.push(`/inbox?c=${existing.id}`);
+        return;
+      }
+
+      const { data: profile, error: profileError } =
+        await supabase
+          .from('profiles')
+          .select('account_id')
+          .eq('user_id', user.id)
+          .single();
+
+      if (profileError || !profile?.account_id) {
+        throw new Error(
+          profileError?.message ??
+            'Your profile is not linked to an account.',
+        );
+      }
+
+      const { data: conversation, error: conversationError } =
+        await supabase
+          .from('conversations')
+          .insert({
+            user_id: user.id,
+            account_id: profile.account_id,
+            contact_id: contact.id,
+            status: 'open',
+            last_message_text: null,
+            last_message_at: null,
+            unread_count: 0,
+          })
+          .select('id')
+          .single();
+
+      if (conversationError || !conversation) {
+        throw new Error(
+          conversationError?.message ??
+            'Could not create conversation.',
+        );
+      }
+
+      router.push(`/inbox?c=${conversation.id}`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Unable to open WhatsApp chat.',
+      );
+    }
+  }
+
   function confirmDelete(contact: Contact) {
     setDeleteTarget(contact);
     setDeleteConfirmOpen(true);
@@ -245,6 +549,13 @@ const { data, count, error } = await query;
       toast.error('Failed to delete contact');
     } else {
       toast.success('Contact deleted');
+
+      setSelectedContacts((prev) => {
+        const next = { ...prev };
+        delete next[deleteTarget.id];
+        return next;
+      });
+
       fetchContacts();
     }
 
@@ -307,6 +618,7 @@ const { data, count, error } = await query;
      onClick={() => {
       setPage(0);
       setLeadFilter('all');
+      setSelectedContacts({});
     }}
   >
     All Leads
@@ -318,6 +630,7 @@ const { data, count, error } = await query;
     onClick={() => {
       setPage(0);
       setLeadFilter('assigned');
+      setSelectedContacts({});
     }}
   >
     Assigned
@@ -329,6 +642,7 @@ const { data, count, error } = await query;
     onClick={() => {
       setPage(0);
       setLeadFilter('unassigned');
+      setSelectedContacts({});
     }}
   >
     Unassigned
@@ -341,6 +655,7 @@ const { data, count, error } = await query;
     onChange={(e) => {
       setStatusFilter(e.target.value);
       setPage(0);
+      setSelectedContacts({});
     }}
     className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
   >
@@ -358,6 +673,7 @@ const { data, count, error } = await query;
     onChange={(e) => {
       setSourceFilter(e.target.value);
       setPage(0);
+      setSelectedContacts({});
     }}
     className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
   >
@@ -376,6 +692,7 @@ const { data, count, error } = await query;
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
+            setSelectedContacts({});
             // Reset pagination when the query changes — the result
             // set shrinks/grows, page N may no longer be valid.
             setPage(0);
@@ -385,11 +702,94 @@ const { data, count, error } = await query;
         />
       </div>
 
+      {/* Bulk contact actions */}
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900/80 p-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleSelectAll()}
+            disabled={selectingAll || loading || totalCount === 0}
+            className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+          >
+            {selectingAll ? (
+              <Loader2 className="mr-2 size-3.5 animate-spin" />
+            ) : null}
+            Select All
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleDeselectAll}
+            disabled={selectedCount === 0}
+            className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+          >
+            Deselect All
+          </Button>
+
+          <span className="text-xs text-slate-500">
+            {selectedCount} selected
+            {search.trim() ||
+            leadFilter !== 'all' ||
+            statusFilter !== 'all' ||
+            sourceFilter !== 'all'
+              ? ' from current filters'
+              : ''}
+          </span>
+        </div>
+
+        <Button
+          size="sm"
+          onClick={() => void handleDownloadSelected()}
+          disabled={selectedCount === 0 || downloadingSelected}
+          className="bg-primary text-primary-foreground hover:bg-primary/90"
+        >
+          {downloadingSelected ? (
+            <Loader2 className="mr-2 size-3.5 animate-spin" />
+          ) : (
+            <Download className="mr-2 size-3.5" />
+          )}
+          Download Selected
+        </Button>
+      </div>
+
       {/* Table */}
       <div className="rounded-lg border border-slate-800 overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="border-slate-800 hover:bg-transparent">
+              <TableHead className="w-12 text-slate-400">
+                <input
+                  type="checkbox"
+                  aria-label={
+                    allVisibleSelected
+                      ? 'Deselect visible contacts'
+                      : 'Select visible contacts'
+                  }
+                  checked={allVisibleSelected}
+                  onChange={() => {
+                    if (allVisibleSelected) {
+                      setSelectedContacts((prev) => {
+                        const next = { ...prev };
+                        for (const contact of contacts) {
+                          delete next[contact.id];
+                        }
+                        return next;
+                      });
+                    } else {
+                      setSelectedContacts((prev) => {
+                        const next = { ...prev };
+                        for (const contact of contacts) {
+                          next[contact.id] = contact;
+                        }
+                        return next;
+                      });
+                    }
+                  }}
+                  className="size-4 cursor-pointer accent-primary"
+                />
+              </TableHead>
               <TableHead className="text-slate-400">Name</TableHead>
               <TableHead className="text-slate-400">Phone</TableHead>
               <TableHead className="text-slate-400 hidden md:table-cell">Email</TableHead>
@@ -414,7 +814,7 @@ const { data, count, error } = await query;
           <TableBody>
             {loading ? (
               <TableRow className="border-slate-800">
-                <TableCell colSpan={7} className="text-center py-12">
+                <TableCell colSpan={11} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-slate-500">Loading contacts...</p>
@@ -423,7 +823,7 @@ const { data, count, error } = await query;
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-slate-800">
-                <TableCell colSpan={7} className="text-center py-12">
+                <TableCell colSpan={11} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-slate-600" />
                     <p className="text-sm text-slate-500">
@@ -447,9 +847,30 @@ const { data, count, error } = await query;
               contacts.map((contact) => (
                 <TableRow
                   key={contact.id}
-                  className="border-slate-800 hover:bg-slate-900/50 cursor-pointer"
+                  className={`border-slate-800 hover:bg-slate-900/50 cursor-pointer ${
+                    selectedContacts[contact.id]
+                      ? 'bg-primary/5'
+                      : ''
+                  }`}
                   onClick={() => openDetail(contact.id)}
                 >
+                  <TableCell
+                    className="w-12"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${
+                        contact.name || contact.phone
+                      }`}
+                      checked={!!selectedContacts[contact.id]}
+                      onChange={() =>
+                        toggleContactSelection(contact)
+                      }
+                      className="size-4 cursor-pointer accent-primary"
+                    />
+                  </TableCell>
+
                   <TableCell className="text-white font-medium">
                     {contact.name || <span className="text-slate-500 italic">Unnamed</span>}
                   </TableCell>
@@ -537,6 +958,19 @@ const { data, count, error } = await query;
                         align="end"
                         className="bg-slate-900 border-slate-700"
                       >
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void openInbox(contact);
+                          }}
+                          className="text-slate-300 focus:bg-slate-800 focus:text-white"
+                        >
+                          <MessageCircle className="size-4" />
+                          Open WhatsApp Chat
+                        </DropdownMenuItem>
+
+                        <DropdownMenuSeparator className="bg-slate-700" />
+
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();

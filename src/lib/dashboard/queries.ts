@@ -229,18 +229,36 @@ export async function loadTeamPerformance(db: DB) {
     members.map((m) => [m.userId, m])
   )
 
-  ;(contactsRes.data ?? []).forEach((c: any) => {
-    const member = map.get(c.assigned_to)
+  const assignedContacts = (contactsRes.data ?? []) as Array<{
+    assigned_to: string | null
+  }>
+
+  const assignedDeals = (dealsRes.data ?? []) as Array<{
+    assigned_to: string | null
+  }>
+
+  const assignedTasks = (tasksRes.data ?? []) as Array<{
+    assigned_to: string | null
+  }>
+
+  assignedContacts.forEach((c) => {
+    const member = c.assigned_to
+      ? map.get(c.assigned_to)
+      : undefined
     if (member) member.assignedLeads++
   })
 
-  ;(dealsRes.data ?? []).forEach((d: any) => {
-    const member = map.get(d.assigned_to)
+  assignedDeals.forEach((d) => {
+    const member = d.assigned_to
+      ? map.get(d.assigned_to)
+      : undefined
     if (member) member.openDeals++
   })
 
-  ;(tasksRes.data ?? []).forEach((t: any) => {
-    const member = map.get(t.assigned_to)
+  assignedTasks.forEach((t) => {
+    const member = t.assigned_to
+      ? map.get(t.assigned_to)
+      : undefined
     if (member) member.openTasks++
   })
 

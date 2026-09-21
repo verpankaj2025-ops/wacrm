@@ -93,14 +93,74 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
-    if (tagsRes.data) {
+    if (tagsRes.data && tagsRes.data.length > 0) {
       const mapped = tagsRes.data
         .filter((ct: Record<string, unknown>) => ct.tags)
         .map((ct: Record<string, unknown>) => ({
           ...(ct.tags as Tag),
           contact_tag_id: ct.id as string,
         }));
+
       setTags(mapped);
+    } else {
+      // Fallback for cases where the nested Supabase relation
+      // does not hydrate tags reliably in the Inbox.
+      const { data: links, error: linkError } =
+        await supabase
+          .from('contact_tags')
+          .select('id, tag_id')
+          .eq('contact_id', contact.id);
+
+      if (linkError) {
+        console.error(
+          '[inbox/contact-sidebar] tag links failed:',
+          linkError.message,
+        );
+        setTags([]);
+      } else {
+        const tagIds = [
+          ...new Set(
+            (links ?? []).map(
+              (link: { tag_id: string }) => link.tag_id,
+            ),
+          ),
+        ];
+
+        if (tagIds.length === 0) {
+          setTags([]);
+        } else {
+          const { data: tagRows, error: tagError } =
+            await supabase
+              .from('tags')
+              .select('*')
+              .in('id', tagIds);
+
+          if (tagError) {
+            console.error(
+              '[inbox/contact-sidebar] tags failed:',
+              tagError.message,
+            );
+            setTags([]);
+          } else {
+            const linkIdByTag = new Map(
+              (links ?? []).map(
+                (link: { id: string; tag_id: string }) => [
+                  link.tag_id,
+                  link.id,
+                ],
+              ),
+            );
+
+            setTags(
+              (tagRows ?? []).map((tag: Tag) => ({
+                ...tag,
+                contact_tag_id:
+                  linkIdByTag.get(tag.id) ?? tag.id,
+              })),
+            );
+          }
+        }
+      }
     }
   }, [contact]);
   useEffect(() => {
@@ -432,16 +492,19 @@ const updateAssignedUser = useCallback(
               <TagIcon className="h-3 w-3" />
               Tags
             </div>
-            <div className="mt-2 flex flex-wrap gap-1">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {tags.length === 0 ? (
-                <p className="px-1 text-xs text-slate-600">No tags</p>
+                <p className="px-1 text-xs text-slate-600">
+                  No tags assigned
+                </p>
               ) : (
                 tags.map((tag) => (
                   <span
                     key={tag.contact_tag_id}
-                    className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    className="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-medium"
                     style={{
                       backgroundColor: `${tag.color}20`,
+                      borderColor: `${tag.color}55`,
                       color: tag.color,
                     }}
                   >

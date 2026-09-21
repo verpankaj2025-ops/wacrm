@@ -339,7 +339,7 @@ export default function PipelinesPage() {
         }
       }
     },
-    [supabase, refreshDeals],
+    [supabase, refreshDeals, accountId, deals, stages],
   );
 
   const handleAddDeal = useCallback(

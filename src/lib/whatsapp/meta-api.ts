@@ -142,7 +142,14 @@ export async function registerPhoneNumber(
   // text "already registered" appears when the number is already
   // subscribed to this app — that's success from the caller's
   // perspective, surface it as such.
-  let data: any = {}
+  let data: {
+    error?: {
+      message?: string
+      code?: number
+      type?: string
+      fbtrace_id?: string
+    }
+  } = {}
 
 try {
   data = await response.json()
@@ -150,7 +157,7 @@ try {
   console.log("META REGISTER ERROR")
   console.log(JSON.stringify(data, null, 2))
   console.log("======================================")
-} catch (e) {
+} catch {
   console.log("REGISTER RESPONSE STATUS:", response.status)
 }
   const message = data.error?.message ?? `Meta API error: ${response.status}`
