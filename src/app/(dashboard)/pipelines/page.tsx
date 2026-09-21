@@ -36,12 +36,17 @@ import { GatedButton } from "@/components/ui/gated-button";
 // not on different copy.
 
 // Spec-defined seed — name and color per the product spec.
+const SPA_PIPELINE_NAME = "Spa Lead Pipeline";
+
 const SPEC_DEFAULT_STAGES = [
-  { name: "New Lead", color: "#3b82f6", position: 0 }, // blue
-  { name: "Qualified", color: "#eab308", position: 1 }, // yellow
-  { name: "Proposal Sent", color: "#f97316", position: 2 }, // orange
-  { name: "Negotiation", color: "#8b5cf6", position: 3 }, // purple
-  { name: "Won", color: "#22c55e", position: 4 }, // green
+  { name: "New Lead", color: "#3b82f6", position: 0 },
+  { name: "Contacted", color: "#06b6d4", position: 1 },
+  { name: "Qualified", color: "#eab308", position: 2 },
+  { name: "Follow-up", color: "#f97316", position: 3 },
+  { name: "Booking Pending", color: "#8b5cf6", position: 4 },
+  { name: "Booked", color: "#22c55e", position: 5 },
+  { name: "Completed", color: "#10b981", position: 6 },
+  { name: "Rebook", color: "#14b8a6", position: 7 },
 ];
 
 export default function PipelinesPage() {
@@ -107,36 +112,73 @@ export default function PipelinesPage() {
     [supabase],
   );
 
-  const seedDefaultPipeline = useCallback(async (): Promise<Pipeline | null> => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) return null;
-    // pipelines.account_id is NOT NULL post-017 with no DB default.
-    if (!accountId) return null;
+  const ensureSpaLeadPipeline = useCallback(
+    async (existingPipelines: Pipeline[]): Promise<Pipeline | null> => {
+      const existing = existingPipelines.find(
+        (pipeline) => pipeline.name === SPA_PIPELINE_NAME,
+      );
 
-    const { data: pipeline, error } = await supabase
-      .from("pipelines")
-      .insert({ user_id: user.id, account_id: accountId, name: "Sales Pipeline" })
-      .select()
-      .single();
+      if (existing) {
+        return existing;
+      }
 
-    if (error || !pipeline) {
-      console.error("Failed to seed pipeline:", error?.message);
-      return null;
-    }
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    const stagesPayload = SPEC_DEFAULT_STAGES.map((s) => ({
-      pipeline_id: pipeline.id,
-      name: s.name,
-      color: s.color,
-      position: s.position,
-    }));
-    await supabase.from("pipeline_stages").insert(stagesPayload);
+      const user = session?.user;
 
-    return pipeline as Pipeline;
-  }, [supabase, accountId]);
+      if (!user || !accountId) {
+        return null;
+      }
+
+      const { data: pipeline, error } = await supabase
+        .from("pipelines")
+        .insert({
+          user_id: user.id,
+          account_id: accountId,
+          name: SPA_PIPELINE_NAME,
+        })
+        .select()
+        .single();
+
+      if (error || !pipeline) {
+        console.error(
+          "Failed to create Spa Lead Pipeline:",
+          error?.message,
+        );
+        return null;
+      }
+
+      const stagesPayload = SPEC_DEFAULT_STAGES.map((stage) => ({
+        pipeline_id: pipeline.id,
+        name: stage.name,
+        color: stage.color,
+        position: stage.position,
+      }));
+
+      const { error: stagesError } = await supabase
+        .from("pipeline_stages")
+        .insert(stagesPayload);
+
+      if (stagesError) {
+        console.error(
+          "Failed to create Spa Lead Pipeline stages:",
+          stagesError.message,
+        );
+
+        await supabase
+          .from("pipelines")
+          .delete()
+          .eq("id", pipeline.id);
+
+        return null;
+      }
+
+      return pipeline as Pipeline;
+    },
+    [supabase, accountId],
+  );
 
   // Initial load + seed-if-empty
   useEffect(() => {
@@ -145,27 +187,40 @@ export default function PipelinesPage() {
       setLoading(true);
       let list = await loadPipelines();
 
-      if (list.length === 0 && !seedAttempted.current) {
+      if (!seedAttempted.current) {
         seedAttempted.current = true;
-        const seeded = await seedDefaultPipeline();
-        if (seeded) list = await loadPipelines();
+
+        const ensured = await ensureSpaLeadPipeline(list);
+
+        if (ensured) {
+          list = await loadPipelines();
+        }
       }
 
       if (cancelled) return;
+
       setPipelines(list);
+
       if (list.length > 0) {
+        const preferred =
+          list.find((pipeline) => pipeline.name === SPA_PIPELINE_NAME) ??
+          list[0];
+
         setSelectedPipelineId((prev) =>
-          prev && list.some((p) => p.id === prev) ? prev : list[0].id,
+          prev && list.some((pipeline) => pipeline.id === prev)
+            ? prev
+            : preferred.id,
         );
       } else {
         setSelectedPipelineId("");
       }
+
       setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadPipelines, seedDefaultPipeline]);
+  }, [loadPipelines, ensureSpaLeadPipeline]);
 
   // Load stages + deals whenever selected pipeline changes.
   // Clearing on no-selection is a legitimate sync with URL/prop
@@ -195,12 +250,33 @@ export default function PipelinesPage() {
   }, [selectedPipelineId, loadStages, loadDeals]);
 
   const refreshPipelines = useCallback(async () => {
-    const list = await loadPipelines();
+    let list = await loadPipelines();
+
+    const ensured = await ensureSpaLeadPipeline(list);
+
+    if (ensured) {
+      list = await loadPipelines();
+    }
+
     setPipelines(list);
-    if (list.length === 0) setSelectedPipelineId("");
-    else if (!list.some((p) => p.id === selectedPipelineId))
-      setSelectedPipelineId(list[0].id);
-  }, [loadPipelines, selectedPipelineId]);
+
+    if (list.length === 0) {
+      setSelectedPipelineId("");
+      return;
+    }
+
+    if (!list.some((pipeline) => pipeline.id === selectedPipelineId)) {
+      const preferred =
+        list.find((pipeline) => pipeline.name === SPA_PIPELINE_NAME) ??
+        list[0];
+
+      setSelectedPipelineId(preferred.id);
+    }
+  }, [
+    loadPipelines,
+    ensureSpaLeadPipeline,
+    selectedPipelineId,
+  ]);
 
   const refreshStages = useCallback(async () => {
     if (!selectedPipelineId) return;
@@ -222,9 +298,45 @@ export default function PipelinesPage() {
         .from("deals")
         .update({ stage_id: newStageId })
         .eq("id", dealId);
+
       if (error) {
         toast.error("Failed to move deal");
         refreshDeals();
+        return;
+      }
+
+      const movedDeal = deals.find(
+        (deal) => deal.id === dealId,
+      );
+
+      const movedStage = stages.find(
+        (stage) => stage.id === newStageId,
+      );
+
+      if (movedDeal?.contact_id && movedStage) {
+        const stageStatusMap: Record<string, string> = {
+          "New Lead": "new",
+          Contacted: "contacted",
+          Qualified: "qualified",
+          "Follow-up": "follow_up",
+          "Booking Pending": "booking_pending",
+          Booked: "booked",
+          Completed: "completed",
+          Rebook: "rebook",
+        };
+
+        const leadStatus = stageStatusMap[movedStage.name];
+
+        if (leadStatus && accountId) {
+          await supabase
+            .from("contacts")
+            .update({
+              lead_status: leadStatus,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", movedDeal.contact_id)
+            .eq("account_id", accountId);
+        }
       }
     },
     [supabase, refreshDeals],
@@ -267,7 +379,11 @@ export default function PipelinesPage() {
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, account_id: accountId, name })
+      .insert({
+        user_id: user.id,
+        account_id: accountId,
+        name,
+      })
       .select()
       .single();
 
@@ -439,7 +555,7 @@ export default function PipelinesPage() {
               }}
             />
             <p className="mt-2 text-xs text-slate-400">
-              Default stages (New Lead → Won) will be created automatically.
+              Spa lead stages are used by the default pipeline.
             </p>
           </div>
           <DialogFooter className="bg-slate-900/50 border-slate-700">
