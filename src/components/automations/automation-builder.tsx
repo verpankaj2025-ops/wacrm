@@ -469,6 +469,13 @@ function TriggerCard({
                 {TRIGGER_OPTIONS.find((o) => o.value === type)?.hint}
               </p>
             </div>
+            {type === "time_based" && (
+              <p className="rounded-md border border-slate-700 bg-slate-900/80 p-2 text-[11px] leading-5 text-slate-500">
+                For manual cold-lead enrollment, the first outbound step must be an approved Send Template.
+                Later Send Message steps automatically respect the WhatsApp 24-hour customer-service window.
+              </p>
+            )}
+
             {type === "keyword_match" && (
               <KeywordMatchConfig
                 config={config as unknown as KeywordMatchTriggerConfig}

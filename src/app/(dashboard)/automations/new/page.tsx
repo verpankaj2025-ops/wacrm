@@ -26,6 +26,23 @@ export default function NewAutomationPage() {
 
   const initial: BuilderInitial =
     useMemo(() => {
+      if (preset === "cold_lead_followup") {
+        return {
+          name:
+            "Cold Lead WhatsApp Follow-up",
+          description:
+            "Template-first sequence for manually-added or imported leads outside the 24-hour WhatsApp window. After the lead replies, Send Message steps can continue with free-form text while the customer-service window is open.",
+          trigger_type:
+            "time_based" as AutomationTriggerType,
+          trigger_config: {
+            schedule: "manual_enrollment",
+          },
+          is_active: false,
+          steps:
+            createColdLeadFollowupSteps(),
+        }
+      }
+
       if (preset === "spa_followup") {
         return {
           name:
@@ -113,6 +130,74 @@ export default function NewAutomationPage() {
       initial={initial}
     />
   )
+}
+
+function createColdLeadFollowupSteps(): BuilderStep[] {
+  const make = (
+    step_type: AutomationStepType,
+    step_config: Record<string, unknown>,
+  ): BuilderStep => ({
+    cid: crypto.randomUUID(),
+    step_type,
+    step_config,
+  })
+
+  return [
+    make("send_template", {
+      template_name:
+        "YOUR_APPROVED_COLD_LEAD_TEMPLATE",
+      language:
+        "en_US",
+    }),
+
+    make("wait", {
+      amount: 15,
+      unit: "minutes",
+    }),
+
+    make("send_message", {
+      text:
+        "Hi 😊 Aapko spa service, package ya available timing ke baare mein help chahiye ho to yahin reply karein.",
+      fallback_template_name:
+        "YOUR_APPROVED_FOLLOWUP_TEMPLATE",
+      fallback_template_language:
+        "en_US",
+      fallback_task_title:
+        "Cold lead follow-up — customer has not replied within the WhatsApp window",
+    }),
+
+    make("wait", {
+      amount: 4,
+      unit: "hours",
+    }),
+
+    make("send_message", {
+      text:
+        "Just checking in 😊 Agar aap batayein ki aap kis service aur kis date ke liye interested hain, hum aapko guide kar sakte hain.",
+      fallback_template_name:
+        "YOUR_APPROVED_FOLLOWUP_TEMPLATE",
+      fallback_template_language:
+        "en_US",
+      fallback_task_title:
+        "Second cold lead follow-up",
+    }),
+
+    make("wait", {
+      amount: 20,
+      unit: "hours",
+    }),
+
+    make("send_message", {
+      text:
+        "Whenever you're ready 😊 Reply here and our team will help you with your spa booking.",
+      fallback_template_name:
+        "YOUR_APPROVED_FOLLOWUP_TEMPLATE",
+      fallback_template_language:
+        "en_US",
+      fallback_task_title:
+        "Final cold lead follow-up",
+    }),
+  ]
 }
 
 function createSpaFollowupSteps(): BuilderStep[] {

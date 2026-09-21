@@ -43,6 +43,7 @@ import {
   ChevronRight,
   Download,
   MessageCircle,
+  PlayCircle,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ContactForm } from '@/components/contacts/contact-form';
@@ -50,6 +51,7 @@ import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
+import { StartFollowUpDialog } from '@/components/contacts/start-followup-dialog';
 
 const PAGE_SIZE = 25;
 
@@ -90,6 +92,8 @@ const [importOpen, setImportOpen] = useState(false);
 const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
 const [deleting, setDeleting] = useState(false);
+const [followupContact, setFollowupContact] = useState<Contact | null>(null);
+const [followupOpen, setFollowupOpen] = useState(false);
 
   // All tags for display
 const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
@@ -961,6 +965,18 @@ const { data, count, error } = await query;
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
+                            setFollowupContact(contact);
+                            setFollowupOpen(true);
+                          }}
+                          className="text-slate-300 focus:bg-slate-800 focus:text-white"
+                        >
+                          <PlayCircle className="size-4" />
+                          Start Follow-up
+                        </DropdownMenuItem>
+
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
                             void openInbox(contact);
                           }}
                           className="text-slate-300 focus:bg-slate-800 focus:text-white"
@@ -1048,6 +1064,19 @@ const { data, count, error } = await query;
       />
 
       {/* Contact Detail Sheet */}
+      <StartFollowUpDialog
+        open={followupOpen}
+        contact={followupContact}
+        onOpenChange={(open) => {
+          setFollowupOpen(open);
+          if (!open) setFollowupContact(null);
+        }}
+        onStarted={() => {
+          setFollowupContact(null);
+        }}
+      />
+
+
       <ContactDetailView
         open={detailOpen}
         onOpenChange={setDetailOpen}
