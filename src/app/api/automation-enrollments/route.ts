@@ -286,24 +286,204 @@ export async function GET(
       }
     }
 
+    // Resolve each contact's latest customer message so the
+    // Follow-up Leads UI can safely show whether the WhatsApp
+    // 24-hour customer-service window is open.
+    const conversationRows =
+      contactIds.length > 0
+        ? await admin
+            .from("conversations")
+            .select(
+              "id,contact_id,created_at",
+            )
+            .eq(
+              "account_id",
+              accountId,
+            )
+            .in(
+              "contact_id",
+              contactIds,
+            )
+            .order(
+              "created_at",
+              {
+                ascending: false,
+              },
+            )
+        : {
+            data: [],
+            error: null,
+          }
+
+    if (conversationRows.error) {
+      throw new Error(
+        conversationRows.error.message,
+      )
+    }
+
+    const conversationByContact =
+      new Map<
+        string,
+        string
+      >()
+
+    for (
+      const row of
+        conversationRows.data ?? []
+    ) {
+      if (
+        !conversationByContact.has(
+          row.contact_id,
+        )
+      ) {
+        conversationByContact.set(
+          row.contact_id,
+          row.id,
+        )
+      }
+    }
+
+    const conversationIds = [
+      ...new Set(
+        [
+          ...conversationByContact.values(),
+        ],
+      ),
+    ]
+
+    const customerMessages =
+      conversationIds.length > 0
+        ? await admin
+            .from("messages")
+            .select(
+              "conversation_id,created_at",
+            )
+            .in(
+              "conversation_id",
+              conversationIds,
+            )
+            .eq(
+              "sender_type",
+              "customer",
+            )
+            .order(
+              "created_at",
+              {
+                ascending: false,
+              },
+            )
+        : {
+            data: [],
+            error: null,
+          }
+
+    if (customerMessages.error) {
+      throw new Error(
+        customerMessages.error.message,
+      )
+    }
+
+    const latestCustomerMessage =
+      new Map<
+        string,
+        string
+      >()
+
+    for (
+      const message of
+        customerMessages.data ?? []
+    ) {
+      if (
+        !latestCustomerMessage.has(
+          message.conversation_id,
+        )
+      ) {
+        latestCustomerMessage.set(
+          message.conversation_id,
+          message.created_at,
+        )
+      }
+    }
+
+    const customerWindowMs =
+      24 * 60 * 60 * 1000
+
     return NextResponse.json({
       enrollments:
         rows.map(
-          (row) => ({
-            ...row,
-            contact:
-              contactMap.get(
+          (row) => {
+            const conversationId =
+              conversationByContact.get(
                 row.contact_id,
-              ) ?? null,
-            automation:
-              automationMap.get(
-                row.automation_id,
-              ) ?? null,
-            pending:
-              pendingMap.get(
-                row.id,
-              ) ?? null,
-          }),
+              ) ?? null
+
+            const lastCustomerMessageAt =
+              conversationId
+                ? latestCustomerMessage.get(
+                    conversationId,
+                  ) ?? null
+                : null
+
+            const lastCustomerMessageMs =
+              lastCustomerMessageAt
+                ? new Date(
+                    lastCustomerMessageAt,
+                  ).getTime()
+                : Number.NaN
+
+            const ageMs =
+              Number.isFinite(
+                lastCustomerMessageMs,
+              )
+                ? Date.now() -
+                  lastCustomerMessageMs
+                : Number.POSITIVE_INFINITY
+
+            const windowOpen =
+              Number.isFinite(
+                lastCustomerMessageMs,
+              ) &&
+              ageMs >= 0 &&
+              ageMs < customerWindowMs
+
+            const hoursRemaining =
+              windowOpen
+                ? Math.max(
+                    0,
+                    (customerWindowMs -
+                      ageMs) /
+                      (60 *
+                        60 *
+                        1000),
+                  )
+                : 0
+
+            return {
+              ...row,
+              contact:
+                contactMap.get(
+                  row.contact_id,
+                ) ?? null,
+              automation:
+                automationMap.get(
+                  row.automation_id,
+                ) ?? null,
+              pending:
+                pendingMap.get(
+                  row.id,
+                ) ?? null,
+              last_customer_message_at:
+                lastCustomerMessageAt,
+              window_open:
+                windowOpen,
+              hours_remaining:
+                Number(
+                  hoursRemaining.toFixed(
+                    2,
+                  ),
+                ),
+            }
+          },
         ),
       sequences:
         sequences.data ?? [],

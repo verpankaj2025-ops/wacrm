@@ -7,12 +7,14 @@ import {
 } from "react"
 
 import {
+  CheckSquare,
   Clock,
   Loader2,
   Pause,
   Play,
   RefreshCw,
   Search,
+  Send,
   XCircle,
 } from "lucide-react"
 
@@ -20,6 +22,15 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 interface Enrollment {
@@ -35,6 +46,9 @@ interface Enrollment {
   contact_id: string
   next_run_at: string | null
   current_step_position: number
+  window_open?: boolean
+  last_customer_message_at?: string | null
+  hours_remaining?: number
   contact: {
     name: string | null
     phone: string
@@ -55,59 +69,50 @@ interface Sequence {
   is_active: boolean
 }
 
-function formatDate(
-  value: string | null,
-) {
-  if (!value) {
-    return "—"
-  }
-
-  const date =
-    new Date(value)
-
-  if (
-    Number.isNaN(
-      date.getTime(),
-    )
-  ) {
-    return "—"
-  }
-
-  return date.toLocaleString(
-    undefined,
-    {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    },
-  )
+interface ApprovedTemplate {
+  id: string
+  name: string
+  language: string
+  status: string
 }
 
-function localDateTime(
-  value: string | null,
-) {
+type WindowFilter =
+  | "all"
+  | "open"
+  | "closed"
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "—"
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return "—"
+  }
+
+  return date.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function localDateTime(value: string | null) {
   if (!value) {
     return ""
   }
 
-  const date =
-    new Date(value)
+  const date = new Date(value)
 
-  if (
-    Number.isNaN(
-      date.getTime(),
-    )
-  ) {
+  if (Number.isNaN(date.getTime())) {
     return ""
   }
 
-  const pad =
-    (n: number) =>
-      String(n).padStart(
-        2,
-        "0",
-      )
+  const pad = (n: number) =>
+    String(n).padStart(2, "0")
 
   return `${date.getFullYear()}-${pad(
     date.getMonth() + 1,
@@ -123,9 +128,7 @@ function localDateTime(
 function statusClass(
   status: Enrollment["status"],
 ) {
-  if (
-    status === "running"
-  ) {
+  if (status === "running") {
     return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
   }
 
@@ -136,66 +139,70 @@ function statusClass(
     return "border-amber-500/20 bg-amber-500/10 text-amber-300"
   }
 
-  if (
-    status === "completed"
-  ) {
+  if (status === "completed") {
     return "border-primary/20 bg-primary/10 text-primary"
   }
 
-  if (
-    status === "failed"
-  ) {
+  if (status === "failed") {
     return "border-red-500/20 bg-red-500/10 text-red-300"
   }
 
   return "border-slate-700 bg-slate-800 text-slate-400"
 }
 
+function defaultDateTime() {
+  const date = new Date(
+    Math.ceil(
+      Date.now() / (5 * 60 * 1000),
+    ) *
+      (5 * 60 * 1000),
+  )
+
+  const local = new Date(
+    date.getTime() -
+      date.getTimezoneOffset() *
+        60 *
+        1000,
+  )
+
+  return local
+    .toISOString()
+    .slice(0, 16)
+}
+
 export default function FollowupsPage() {
-  const [
-    rows,
-    setRows,
-  ] = useState<Enrollment[]>([])
+  const supabase = createClient()
 
-  const [
-    sequences,
-    setSequences,
-  ] = useState<Sequence[]>([])
-
-  const [
-    search,
-    setSearch,
-  ] = useState("")
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(true)
-
-  const [
-    busyId,
-    setBusyId,
-  ] = useState<string | null>(null)
-
-  const [
-    editingTime,
-    setEditingTime,
-  ] = useState<string | null>(null)
-
-  const [
-    timeDraft,
-    setTimeDraft,
-  ] = useState("")
-
-  const [
-    editingSequence,
-    setEditingSequence,
-  ] = useState<string | null>(null)
-
-  const [
-    sequenceDraft,
-    setSequenceDraft,
-  ] = useState("")
+  const [rows, setRows] =
+    useState<Enrollment[]>([])
+  const [sequences, setSequences] =
+    useState<Sequence[]>([])
+  const [templates, setTemplates] =
+    useState<ApprovedTemplate[]>([])
+  const [search, setSearch] =
+    useState("")
+  const [statusFilter, setStatusFilter] =
+    useState("all")
+  const [windowFilter, setWindowFilter] =
+    useState<WindowFilter>("all")
+  const [selectedIds, setSelectedIds] =
+    useState<Set<string>>(
+      new Set(),
+    )
+  const [loading, setLoading] =
+    useState(true)
+  const [busy, setBusy] =
+    useState(false)
+  const [bulkDialog, setBulkDialog] =
+    useState<
+      "freeform" | "template" | "schedule" | null
+    >(null)
+  const [messageText, setMessageText] =
+    useState("")
+  const [templateId, setTemplateId] =
+    useState("")
+  const [scheduleAt, setScheduleAt] =
+    useState(defaultDateTime())
 
   async function load() {
     setLoading(true)
@@ -205,8 +212,7 @@ export default function FollowupsPage() {
         await fetch(
           "/api/automation-enrollments?limit=500",
           {
-            cache:
-              "no-store",
+            cache: "no-store",
           },
         )
 
@@ -221,17 +227,44 @@ export default function FollowupsPage() {
       }
 
       setRows(
-        body.enrollments ??
-          [],
+        (body.enrollments ??
+          []) as Enrollment[],
       )
 
       setSequences(
-        body.sequences ??
-          [],
+        (body.sequences ??
+          []) as Sequence[],
       )
-    } catch (
-      error
-    ) {
+
+      setSelectedIds(
+        new Set(),
+      )
+
+      const {
+        data: approved,
+        error: templateError,
+      } = await supabase
+        .from("message_templates")
+        .select(
+          "id,name,language,status",
+        )
+        .eq(
+          "status",
+          "APPROVED",
+        )
+        .order("name")
+
+      if (templateError) {
+        throw new Error(
+          templateError.message,
+        )
+      }
+
+      setTemplates(
+        (approved ??
+          []) as ApprovedTemplate[],
+      )
+    } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
@@ -246,87 +279,15 @@ export default function FollowupsPage() {
     void load()
   }, [])
 
-  async function action(
-    row: Enrollment,
-    actionName:
-      | "pause"
-      | "resume"
-      | "cancel"
-      | "reschedule"
-      | "change_sequence",
-    extra: Record<string, unknown> = {},
-  ) {
-    setBusyId(row.id)
-
-    try {
-      const response =
-        await fetch(
-          "/api/automation-enrollments",
-          {
-            method:
-              "PATCH",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body:
-              JSON.stringify({
-                enrollment_id:
-                  row.id,
-                action:
-                  actionName,
-                ...extra,
-              }),
-          },
-        )
-
-      const body =
-        await response.json()
-
-      if (!response.ok) {
-        throw new Error(
-          body?.error ??
-            "Follow-up action failed",
-        )
-      }
-
-      toast.success(
-        "Follow-up updated",
-      )
-
-      setEditingTime(null)
-      setEditingSequence(null)
-
-      await load()
-    } catch (
-      error
-    ) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Follow-up action failed",
-      )
-    } finally {
-      setBusyId(null)
-    }
-  }
-
   const filtered =
-    useMemo(
-      () => {
-        const term =
-          search
-            .trim()
-            .toLowerCase()
+    useMemo(() => {
+      const term =
+        search.trim().toLowerCase()
 
-        if (!term) {
-          return rows
-        }
-
-        return rows.filter(
-          (
-            row,
-          ) =>
+      return rows.filter(
+        (row) => {
+          const matchesSearch =
+            !term ||
             (
               row.contact?.name ??
               ""
@@ -344,14 +305,335 @@ export default function FollowupsPage() {
               ""
             )
               .toLowerCase()
-              .includes(term),
-        )
-      },
-      [
-        rows,
-        search,
-      ],
+              .includes(term)
+
+          const matchesStatus =
+            statusFilter ===
+              "all" ||
+            row.status ===
+              statusFilter
+
+          const matchesWindow =
+            windowFilter ===
+              "all" ||
+            (windowFilter ===
+              "open"
+              ? row.window_open ===
+                true
+              : row.window_open ===
+                false)
+
+          return (
+            matchesSearch &&
+            matchesStatus &&
+            matchesWindow
+          )
+        },
+      )
+    }, [
+      rows,
+      search,
+      statusFilter,
+      windowFilter,
+    ])
+
+  const filteredIds =
+    filtered.map(
+      (row) => row.id,
     )
+
+  const selectedCount =
+    selectedIds.size
+
+  const allFilteredSelected =
+    filtered.length > 0 &&
+    filtered.every((row) =>
+      selectedIds.has(row.id),
+    )
+
+  function toggleAll() {
+    setSelectedIds(
+      (previous) => {
+        const next =
+          new Set(previous)
+
+        if (
+          filtered.every((row) =>
+            next.has(row.id),
+          )
+        ) {
+          for (const id of filteredIds) {
+            next.delete(id)
+          }
+        } else {
+          for (const id of filteredIds) {
+            next.add(id)
+          }
+        }
+
+        return next
+      },
+    )
+  }
+
+  function toggleOne(id: string) {
+    setSelectedIds(
+      (previous) => {
+        const next =
+          new Set(previous)
+
+        if (next.has(id)) {
+          next.delete(id)
+        } else {
+          next.add(id)
+        }
+
+        return next
+      },
+    )
+  }
+
+  async function runBulkAction(
+    action:
+      | "pause"
+      | "resume"
+      | "cancel"
+      | "reschedule",
+    extra: Record<string, unknown> = {},
+  ) {
+    if (selectedCount === 0) {
+      toast.error(
+        "Select at least one follow-up lead.",
+      )
+      return
+    }
+
+    setBusy(true)
+
+    try {
+      const response =
+        await fetch(
+          "/api/automation-enrollments/bulk-action",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body:
+              JSON.stringify({
+                enrollment_ids:
+                  [...selectedIds],
+                action,
+                ...extra,
+              }),
+          },
+        )
+
+      const body =
+        await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          body?.error ??
+            "Bulk action failed.",
+        )
+      }
+
+      toast.success(
+        `${body.updated ?? 0} follow-ups updated.`,
+      )
+
+      setBulkDialog(null)
+      await load()
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Bulk action failed.",
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function sendBulkFreeform() {
+    if (
+      selectedCount ===
+        0 ||
+      !messageText.trim()
+    ) {
+      toast.error(
+        "Select leads and enter a message.",
+      )
+      return
+    }
+
+    setBusy(true)
+
+    try {
+      const response =
+        await fetch(
+          "/api/automation-enrollments/bulk-action",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body:
+              JSON.stringify({
+                enrollment_ids:
+                  [...selectedIds],
+                action:
+                  "freeform",
+                text:
+                  messageText.trim(),
+              }),
+          },
+        )
+
+      const body =
+        await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          body?.error ??
+            "Bulk free-form send failed.",
+        )
+      }
+
+      toast.success(
+        `${body.sent ?? 0} sent, ${body.blocked ?? 0} blocked by 24h window, ${body.failed ?? 0} failed.`,
+      )
+
+      setMessageText("")
+      setBulkDialog(null)
+      await load()
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Bulk free-form send failed.",
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function sendBulkTemplate() {
+    if (
+      selectedCount ===
+        0 ||
+      !templateId
+    ) {
+      toast.error(
+        "Select leads and an approved template.",
+      )
+      return
+    }
+
+    const template =
+      templates.find(
+        (item) =>
+          item.id ===
+          templateId,
+      )
+
+    if (!template) {
+      toast.error(
+        "Approved template not found.",
+      )
+      return
+    }
+
+    setBusy(true)
+
+    try {
+      const response =
+        await fetch(
+          "/api/automation-enrollments/bulk-action",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body:
+              JSON.stringify({
+                enrollment_ids:
+                  [...selectedIds],
+                action:
+                  "template",
+                template_name:
+                  template.name,
+                template_language:
+                  template.language ||
+                  "en_US",
+              }),
+          },
+        )
+
+      const body =
+        await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          body?.error ??
+            "Bulk template send failed.",
+        )
+      }
+
+      toast.success(
+        `${body.sent ?? 0} template messages sent, ${body.failed ?? 0} failed.`,
+      )
+
+      setTemplateId("")
+      setBulkDialog(null)
+      await load()
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Bulk template send failed.",
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function openBulkDialog(
+    type:
+      | "freeform"
+      | "template"
+      | "schedule",
+  ) {
+    if (selectedCount === 0) {
+      toast.error(
+        "Select at least one follow-up lead.",
+      )
+      return
+    }
+
+    if (type === "freeform") {
+      setMessageText("")
+    }
+
+    if (type === "template") {
+      setTemplateId(
+        templates[0]?.id ??
+          "",
+      )
+    }
+
+    if (type === "schedule") {
+      setScheduleAt(
+        defaultDateTime(),
+      )
+    }
+
+    setBulkDialog(type)
+  }
 
   return (
     <div className="space-y-6">
@@ -365,8 +647,8 @@ export default function FollowupsPage() {
           </div>
 
           <p className="mt-1 text-sm text-slate-400">
-            Manage the next follow-up time,
-            sequence and state for each lead.
+            Manage all enrolled leads, 24-hour eligibility,
+            reminders and sequence controls from one screen.
           </p>
         </div>
 
@@ -375,6 +657,7 @@ export default function FollowupsPage() {
           onClick={() =>
             void load()
           }
+          disabled={busy}
           className="border-slate-700 text-slate-300 hover:bg-slate-800"
         >
           <RefreshCw className="mr-2 h-4 w-4" />
@@ -383,21 +666,238 @@ export default function FollowupsPage() {
       </div>
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-        <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+        <div className="grid gap-3 lg:grid-cols-[1fr_170px_180px_auto]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <Input
+              value={search}
+              onChange={(event) =>
+                setSearch(
+                  event.target.value,
+                )
+              }
+              placeholder="Search lead, phone or sequence..."
+              className="border-slate-700 bg-slate-950 pl-9 text-white"
+            />
+          </div>
 
-          <Input
-            value={search}
+          <select
+            value={statusFilter}
             onChange={(event) =>
-              setSearch(
+              setStatusFilter(
                 event.target.value,
               )
             }
-            placeholder="Search lead, phone or sequence..."
-            className="border-slate-700 bg-slate-950 pl-9 text-white"
-          />
+            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
+          >
+            <option value="all">
+              All statuses
+            </option>
+            <option value="pending">
+              Pending
+            </option>
+            <option value="running">
+              Running
+            </option>
+            <option value="paused">
+              Paused
+            </option>
+            <option value="completed">
+              Completed
+            </option>
+            <option value="cancelled">
+              Cancelled
+            </option>
+            <option value="failed">
+              Failed
+            </option>
+          </select>
+
+          <select
+            value={windowFilter}
+            onChange={(event) =>
+              setWindowFilter(
+                event.target
+                  .value as WindowFilter,
+              )
+            }
+            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
+          >
+            <option value="all">
+              All WhatsApp windows
+            </option>
+            <option value="open">
+              24h Open — Free-form
+            </option>
+            <option value="closed">
+              24h Closed — Template
+            </option>
+          </select>
+
+          <Button
+            variant="outline"
+            onClick={toggleAll}
+            disabled={
+              filtered.length ===
+              0
+            }
+            className="border-slate-700 text-slate-300"
+          >
+            <CheckSquare className="mr-2 h-4 w-4" />
+            {allFilteredSelected
+              ? "Deselect All"
+              : "Select All"}
+          </Button>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-full bg-slate-950 px-3 py-1 text-slate-400">
+            Showing{" "}
+            <b className="text-white">
+              {filtered.length}
+            </b>
+          </span>
+
+          <span className="rounded-full bg-slate-950 px-3 py-1 text-primary">
+            Selected{" "}
+            <b>
+              {selectedCount}
+            </b>
+          </span>
+
+          <span className="rounded-full bg-slate-950 px-3 py-1 text-emerald-300">
+            24h Open{" "}
+            <b>
+              {
+                filtered.filter(
+                  (row) =>
+                    row.window_open,
+                ).length
+              }
+            </b>
+          </span>
+
+          <span className="rounded-full bg-slate-950 px-3 py-1 text-amber-300">
+            24h Closed{" "}
+            <b>
+              {
+                filtered.filter(
+                  (row) =>
+                    row.window_open ===
+                    false,
+                ).length
+              }
+            </b>
+          </span>
         </div>
       </div>
+
+      {selectedCount > 0 && (
+        <div className="sticky top-2 z-20 rounded-2xl border border-primary/20 bg-slate-950/95 p-4 shadow-2xl backdrop-blur">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white">
+                {selectedCount} follow-up lead
+                {selectedCount === 1
+                  ? ""
+                  : "s"} selected
+              </p>
+              <p className="text-xs text-slate-500">
+                Free-form is allowed only for contacts
+                whose 24-hour customer window is open.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() =>
+                  openBulkDialog(
+                    "freeform",
+                  )
+                }
+                disabled={busy}
+                className="bg-primary text-primary-foreground"
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Free-form
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() =>
+                  openBulkDialog(
+                    "template",
+                  )
+                }
+                disabled={
+                  busy ||
+                  templates.length ===
+                    0
+                }
+                className="border-slate-700 text-slate-300"
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Approved Template
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() =>
+                  openBulkDialog(
+                    "schedule",
+                  )
+                }
+                disabled={busy}
+                className="border-slate-700 text-slate-300"
+              >
+                Schedule
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() =>
+                  void runBulkAction(
+                    "pause",
+                  )
+                }
+                disabled={busy}
+                className="border-slate-700 text-slate-300"
+              >
+                <Pause className="mr-2 h-4 w-4" />
+                Pause
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() =>
+                  void runBulkAction(
+                    "resume",
+                  )
+                }
+                disabled={busy}
+                className="border-slate-700 text-slate-300"
+              >
+                <Play className="mr-2 h-4 w-4" />
+                Resume
+              </Button>
+
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  void runBulkAction(
+                    "cancel",
+                  )
+                }
+                disabled={busy}
+                className="text-red-400 hover:text-red-300"
+              >
+                <XCircle className="mr-2 h-4 w-4" />
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
         {loading ? (
@@ -416,24 +916,44 @@ export default function FollowupsPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1050px] text-sm">
+            <table className="w-full min-w-[1180px] text-sm">
               <thead>
                 <tr className="border-b border-slate-800 bg-slate-950/50 text-left text-[10px] uppercase tracking-wider text-slate-500">
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={
+                        allFilteredSelected
+                      }
+                      onChange={toggleAll}
+                      aria-label="Select all filtered follow-ups"
+                    />
+                  </th>
+
                   <th className="px-4 py-3">
                     Lead
                   </th>
+
                   <th className="px-4 py-3">
                     Sequence
                   </th>
+
                   <th className="px-4 py-3">
                     Status
                   </th>
+
+                  <th className="px-4 py-3">
+                    WhatsApp Window
+                  </th>
+
                   <th className="px-4 py-3">
                     Next Follow-up
                   </th>
+
                   <th className="px-4 py-3">
                     Step
                   </th>
+
                   <th className="px-4 py-3 text-right">
                     Actions
                   </th>
@@ -442,119 +962,66 @@ export default function FollowupsPage() {
 
               <tbody>
                 {filtered.map(
-                  (
-                    row,
-                  ) => {
+                  (row) => {
                     const nextRun =
                       row.next_run_at ??
                       row.pending?.run_at ??
                       null
 
-                    const busy =
-                      busyId ===
-                      row.id
+                    const selected =
+                      selectedIds.has(
+                        row.id,
+                      )
 
                     return (
                       <tr
                         key={
                           row.id
                         }
-                        className="border-b border-slate-800/70 last:border-b-0"
+                        className={cn(
+                          "border-b border-slate-800/70 last:border-b-0",
+                          selected &&
+                            "bg-primary/5",
+                        )}
                       >
                         <td className="px-4 py-4">
+                          <input
+                            type="checkbox"
+                            checked={
+                              selected
+                            }
+                            onChange={() =>
+                              toggleOne(
+                                row.id,
+                              )
+                            }
+                            aria-label={`Select ${
+                              row.contact
+                                ?.name ??
+                              row.contact
+                                ?.phone ??
+                              "lead"
+                            }`}
+                          />
+                        </td>
+
+                        <td className="px-4 py-4">
                           <div className="font-medium text-white">
-                            {row.contact?.name ??
+                            {row.contact
+                              ?.name ??
                               "Unnamed lead"}
                           </div>
-
                           <div className="mt-1 font-mono text-[11px] text-slate-500">
-                            {row.contact?.phone ??
+                            {row.contact
+                              ?.phone ??
                               "—"}
                           </div>
                         </td>
 
-                        <td className="px-4 py-4">
-                          {editingSequence ===
-                          row.id ? (
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={
-                                  sequenceDraft
-                                }
-                                onChange={(
-                                  event,
-                                ) =>
-                                  setSequenceDraft(
-                                    event
-                                      .target
-                                      .value,
-                                  )
-                                }
-                                className="w-48 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white"
-                              >
-                                {sequences
-                                  .filter(
-                                    (
-                                      sequence,
-                                    ) =>
-                                      sequence.is_active,
-                                  )
-                                  .map(
-                                    (
-                                      sequence,
-                                    ) => (
-                                      <option
-                                        key={
-                                          sequence.id
-                                        }
-                                        value={
-                                          sequence.id
-                                        }
-                                      >
-                                        {
-                                          sequence.name
-                                        }
-                                      </option>
-                                    ),
-                                  )}
-                              </select>
-
-                              <Button
-                                size="sm"
-                                disabled={
-                                  busy
-                                }
-                                onClick={() =>
-                                  void action(
-                                    row,
-                                    "change_sequence",
-                                    {
-                                      automation_id:
-                                        sequenceDraft,
-                                    },
-                                  )
-                                }
-                              >
-                                Save
-                              </Button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingSequence(
-                                  row.id,
-                                )
-                                setSequenceDraft(
-                                  row.automation_id,
-                                )
-                              }}
-                              className="text-left text-xs font-medium text-white hover:text-primary"
-                            >
-                              {row.automation?.name ??
-                                "Unknown"}
-                            </button>
-                          )}
+                        <td className="px-4 py-4 text-xs font-medium text-white">
+                          {row.automation
+                            ?.name ??
+                            "Unknown"}
                         </td>
 
                         <td className="px-4 py-4">
@@ -571,82 +1038,36 @@ export default function FollowupsPage() {
                         </td>
 
                         <td className="px-4 py-4">
-                          {editingTime ===
-                          row.id ? (
-                            <div className="space-y-2">
-                              <input
-                                type="datetime-local"
-                                value={
-                                  timeDraft
-                                }
-                                onChange={(
-                                  event,
-                                ) =>
-                                  setTimeDraft(
-                                    event
-                                      .target
-                                      .value,
-                                  )
-                                }
-                                className="w-56 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white"
-                              />
-
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  disabled={
-                                    busy ||
-                                    !timeDraft
-                                  }
-                                  onClick={() =>
-                                    void action(
-                                      row,
-                                      "reschedule",
-                                      {
-                                        run_at:
-                                          new Date(
-                                            timeDraft,
-                                          ).toISOString(),
-                                      },
-                                    )
-                                  }
-                                >
-                                  Save
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() =>
-                                    setEditingTime(
-                                      null,
-                                    )
-                                  }
-                                >
-                                  Cancel
-                                </Button>
-                              </div>
+                          {row.window_open ? (
+                            <div>
+                              <span className="inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-300">
+                                Open
+                              </span>
+                              {typeof row.hours_remaining ===
+                                "number" && (
+                                <div className="mt-1 text-[10px] text-slate-500">
+                                  {row.hours_remaining.toFixed(
+                                    1,
+                                  )}
+                                  h left
+                                </div>
+                              )}
                             </div>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingTime(
-                                  row.id,
-                                )
+                            <div>
+                              <span className="inline-flex rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-medium text-amber-300">
+                                Closed
+                              </span>
+                              <div className="mt-1 text-[10px] text-slate-500">
+                                Template required
+                              </div>
+                            </div>
+                          )}
+                        </td>
 
-                                setTimeDraft(
-                                  localDateTime(
-                                    nextRun,
-                                  ),
-                                )
-                              }}
-                              className="text-left text-xs text-slate-300 hover:text-primary"
-                            >
-                              {formatDate(
-                                nextRun,
-                              )}
-                            </button>
+                        <td className="px-4 py-4 text-xs text-slate-300">
+                          {formatDate(
+                            nextRun,
                           )}
                         </td>
 
@@ -658,108 +1079,10 @@ export default function FollowupsPage() {
                           ) + 1}
                         </td>
 
-                        <td className="px-4 py-4">
-                          <div className="flex flex-wrap justify-end gap-2">
-                            {row.status ===
-                            "paused" ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={
-                                  busy
-                                }
-                                onClick={() =>
-                                  void action(
-                                    row,
-                                    "resume",
-                                  )
-                                }
-                                className="border-slate-700 text-slate-300"
-                              >
-                                <Play className="mr-1 h-3.5 w-3.5" />
-                                Resume
-                              </Button>
-                            ) : (
-                              (
-                                row.status ===
-                                  "pending" ||
-                                row.status ===
-                                  "running"
-                              ) && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={
-                                    busy
-                                  }
-                                  onClick={() =>
-                                    void action(
-                                      row,
-                                      "pause",
-                                    )
-                                  }
-                                  className="border-slate-700 text-slate-300"
-                                >
-                                  <Pause className="mr-1 h-3.5 w-3.5" />
-                                  Pause
-                                </Button>
-                              )
-                            )}
-
-                            {(
-                              row.status ===
-                                "pending" ||
-                              row.status ===
-                                "paused" ||
-                              row.status ===
-                                "running"
-                            ) && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={
-                                    busy
-                                  }
-                                  onClick={() =>
-                                    void action(
-                                      row,
-                                      "reschedule",
-                                      {
-                                        run_at:
-                                          new Date(
-                                            Date.now() +
-                                              30 *
-                                                60 *
-                                                1000,
-                                          ).toISOString(),
-                                      },
-                                    )
-                                  }
-                                  className="text-slate-400 hover:text-white"
-                                >
-                                  +30m
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={
-                                    busy
-                                  }
-                                  onClick={() =>
-                                    void action(
-                                      row,
-                                      "cancel",
-                                    )
-                                  }
-                                  className="text-red-400 hover:text-red-300"
-                                >
-                                  <XCircle className="mr-1 h-3.5 w-3.5" />
-                                  Cancel
-                                </Button>
-                              </>
-                            )}
+                        <td className="px-4 py-4 text-right">
+                          <div className="text-[11px] text-slate-500">
+                            Select lead for
+                            bulk actions
                           </div>
                         </td>
                       </tr>
@@ -771,6 +1094,231 @@ export default function FollowupsPage() {
           </div>
         )}
       </div>
+
+      <Dialog
+        open={
+          bulkDialog !== null
+        }
+        onOpenChange={(open) => {
+          if (!open) {
+            setBulkDialog(null)
+          }
+        }}
+      >
+        <DialogContent className="border-slate-700 bg-slate-900 text-slate-100">
+          {bulkDialog ===
+            "freeform" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  Bulk Free-form Reminder
+                </DialogTitle>
+                <DialogDescription className="text-slate-400">
+                  Only contacts whose WhatsApp 24-hour
+                  customer window is open will receive this
+                  message.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-emerald-200">
+                  <b>
+                    {filtered.filter(
+                      (row) =>
+                        selectedIds.has(
+                          row.id,
+                        ) &&
+                        row.window_open,
+                    ).length}
+                  </b>{" "}
+                  selected leads currently have an open
+                  24-hour window.
+                </div>
+
+                <textarea
+                  value={messageText}
+                  onChange={(event) =>
+                    setMessageText(
+                      event.target
+                        .value,
+                    )
+                  }
+                  rows={6}
+                  placeholder="Hi {{name}} 😊 Just checking in..."
+                  className="w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white placeholder-slate-500"
+                />
+
+                <p className="text-[11px] text-slate-500">
+                  Use <code>{"{{name}}"}</code> for contact-name
+                  personalization.
+                </p>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setBulkDialog(null)
+                  }
+                  className="border-slate-700 text-slate-300"
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  disabled={
+                    busy ||
+                    !messageText.trim()
+                  }
+                  onClick={() =>
+                    void sendBulkFreeform()
+                  }
+                  className="bg-primary text-primary-foreground"
+                >
+                  {busy && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Send Free-form
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {bulkDialog ===
+            "template" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  Bulk Approved Template
+                </DialogTitle>
+                <DialogDescription className="text-slate-400">
+                  This can be used for leads whose 24-hour window
+                  is closed.
+                </DialogDescription>
+              </DialogHeader>
+
+              <select
+                value={templateId}
+                onChange={(event) =>
+                  setTemplateId(
+                    event.target.value,
+                  )
+                }
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white"
+              >
+                <option value="">
+                  Select approved template
+                </option>
+
+                {templates.map(
+                  (template) => (
+                    <option
+                      key={
+                        template.id
+                      }
+                      value={
+                        template.id
+                      }
+                    >
+                      {template.name} —{" "}
+                      {template.language}
+                    </option>
+                  ),
+                )}
+              </select>
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setBulkDialog(null)
+                  }
+                  className="border-slate-700 text-slate-300"
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  disabled={
+                    busy ||
+                    !templateId
+                  }
+                  onClick={() =>
+                    void sendBulkTemplate()
+                  }
+                >
+                  {busy && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Send Template
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {bulkDialog ===
+            "schedule" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  Reschedule Selected Follow-ups
+                </DialogTitle>
+                <DialogDescription className="text-slate-400">
+                  This changes the next scheduled sequence checkpoint
+                  for the selected enrolled leads.
+                </DialogDescription>
+              </DialogHeader>
+
+              <input
+                type="datetime-local"
+                value={scheduleAt}
+                onChange={(event) =>
+                  setScheduleAt(
+                    event.target
+                      .value,
+                  )
+                }
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white"
+              />
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setBulkDialog(null)
+                  }
+                  className="border-slate-700 text-slate-300"
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  disabled={
+                    busy ||
+                    !scheduleAt
+                  }
+                  onClick={() =>
+                    void runBulkAction(
+                      "reschedule",
+                      {
+                        run_at:
+                          new Date(
+                            scheduleAt,
+                          ).toISOString(),
+                      },
+                    )
+                  }
+                >
+                  {busy && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Schedule Selected
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/dialog';
 
 import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 
@@ -964,9 +965,23 @@ export function ImportModal({
 
           {result && (
             <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
-              <p className="text-sm font-semibold text-white">
-                Import Complete
-              </p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-semibold text-white">
+                  Import Complete
+                </p>
+
+                {result.enrolled > 0 && (
+                  <Link
+                    href="/automations/followups"
+                    onClick={() =>
+                      handleOpenChange(false)
+                    }
+                    className="inline-flex items-center justify-center rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    View Follow-up Leads
+                  </Link>
+                )}
+              </div>
 
               <div className="grid gap-3 sm:grid-cols-4">
                 <div className="rounded-lg bg-slate-900 p-3">
