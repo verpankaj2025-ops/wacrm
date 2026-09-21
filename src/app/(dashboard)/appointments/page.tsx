@@ -16,6 +16,12 @@ import {
   XCircle,
 } from "lucide-react";
 
+import {
+  canRebookAppointment,
+  defaultRebookStart,
+  appointmentDurationMs,
+} from "@/lib/appointments/rebooking";
+
 type ContactOption = {
   id: string;
   name: string | null;
@@ -37,6 +43,7 @@ type Appointment = {
     | "cancelled"
     | "no_show";
   notes: string | null;
+  rebooked_from_id?: string | null;
   contact?: ContactOption | null;
   assignee?: {
     user_id: string;
@@ -118,6 +125,9 @@ export default function AppointmentsPage() {
   const [editingId, setEditingId] =
     useState<string | null>(null);
 
+  const [rebookingFromId, setRebookingFromId] =
+    useState<string | null>(null);
+
   const [contactId, setContactId] =
     useState("");
   const [serviceName, setServiceName] =
@@ -184,6 +194,7 @@ export default function AppointmentsPage() {
 
   function resetForm() {
     setEditingId(null);
+    setRebookingFromId(null);
     setContactId("");
     setServiceName("");
     setDate("");
@@ -191,6 +202,102 @@ export default function AppointmentsPage() {
     setEndTime("");
     setStatus("scheduled");
     setNotes("");
+  }
+
+  function startRebook(
+    appointment: Appointment,
+  ) {
+    if (
+      !canRebookAppointment(
+        appointment.status,
+      )
+    ) {
+      setError(
+        "Only completed or no-show appointments can be rebooked.",
+      );
+      return;
+    }
+
+    try {
+      const start =
+        defaultRebookStart(
+          appointment.start_at,
+          7,
+        );
+
+      const duration =
+        appointmentDurationMs(
+          appointment.start_at,
+          appointment.end_at,
+        );
+
+      const end =
+        new Date(
+          start.getTime() +
+            duration,
+        );
+
+      const pad = (
+        value: number,
+      ) =>
+        String(value).padStart(
+          2,
+          "0",
+        );
+
+      setEditingId(null);
+      setRebookingFromId(
+        appointment.id,
+      );
+
+      setContactId(
+        appointment.contact_id,
+      );
+
+      setServiceName(
+        appointment.service_name,
+      );
+
+      setDate(
+        `${start.getFullYear()}-${pad(
+          start.getMonth() + 1,
+        )}-${pad(
+          start.getDate(),
+        )}`,
+      );
+
+      setTime(
+        `${pad(
+          start.getHours(),
+        )}:${pad(
+          start.getMinutes(),
+        )}`,
+      );
+
+      setEndTime(
+        `${pad(
+          end.getHours(),
+        )}:${pad(
+          end.getMinutes(),
+        )}`,
+      );
+
+      setStatus("scheduled");
+
+      setNotes(
+        appointment.notes
+          ? `Rebooking from previous visit. ${appointment.notes}`
+          : "Rebooking from previous visit.",
+      );
+
+      setError(null);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to prepare rebooking.",
+      );
+    }
   }
 
   function startEdit(
@@ -254,13 +361,13 @@ export default function AppointmentsPage() {
     setError(null);
 
     try {
-      const url = editingId
-        ? `/api/appointments/${editingId}`
-        : "/api/appointments";
+      const url = rebookingFromId
+        ? `/api/appointments/${rebookingFromId}/rebook`
+        : editingId
+          ? `/api/appointments/${editingId}`
+          : "/api/appointments";
 
-      const method = editingId
-        ? "PATCH"
-        : "POST";
+      const method = "POST";
 
       const response =
         await fetch(url, {
@@ -269,20 +376,32 @@ export default function AppointmentsPage() {
             "Content-Type":
               "application/json",
           },
-          body: JSON.stringify({
-            contact_id:
-              contactId,
-            service_name:
-              serviceName.trim(),
-            start_at:
-              startAt,
-            end_at:
-              endAt,
-            status,
-            notes:
-              notes.trim() ||
-              null,
-          }),
+          body: JSON.stringify(
+            rebookingFromId
+              ? {
+                  start_at: startAt,
+                  end_at: endAt,
+                  service_name:
+                    serviceName.trim(),
+                  notes:
+                    notes.trim() ||
+                    null,
+                }
+              : {
+                  contact_id:
+                    contactId,
+                  service_name:
+                    serviceName.trim(),
+                  start_at:
+                    startAt,
+                  end_at:
+                    endAt,
+                  status,
+                  notes:
+                    notes.trim() ||
+                    null,
+                },
+          ),
         });
 
       const payload =
@@ -416,9 +535,11 @@ export default function AppointmentsPage() {
       <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
           <h2 className="text-sm font-semibold text-white">
-            {editingId
-              ? "Edit Appointment"
-              : "Book Appointment"}
+            {rebookingFromId
+              ? "Rebook Appointment"
+              : editingId
+                ? "Edit Appointment"
+                : "Book Appointment"}
           </h2>
 
           <div className="mt-5 space-y-4">
@@ -851,16 +972,35 @@ export default function AppointmentsPage() {
                         </p>
                       </div>
 
-                      <span
-                        className={`w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold ${STATUS_META[appointment.status].className}`}
-                      >
-                        {
-                          STATUS_META[
-                            appointment
-                              .status
-                          ].label
-                        }
-                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold ${STATUS_META[appointment.status].className}`}
+                        >
+                          {
+                            STATUS_META[
+                              appointment
+                                .status
+                            ].label
+                          }
+                        </span>
+
+                        {canRebookAppointment(
+                          appointment.status,
+                        ) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              startRebook(
+                                appointment,
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 px-3 py-1.5 text-[10px] font-medium text-primary hover:bg-primary/10"
+                          >
+                            <RotateCcw className="size-3" />
+                            Rebook
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ),
                 )}
@@ -872,9 +1012,9 @@ export default function AppointmentsPage() {
 
       <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-xs text-slate-500">
         Appointment times use your browser's local timezone. Later
-        phases can add availability rules, rebooking sequences and
-        WhatsApp booking automation on top of this core appointment
-        record.
+        Completed and no-show visits can now be rebooked directly
+        from history. Rebooking keeps the original appointment linked
+        to the new visit.
       </div>
     </div>
   );
