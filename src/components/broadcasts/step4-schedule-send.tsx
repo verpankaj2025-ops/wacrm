@@ -32,6 +32,14 @@ interface Step4Props {
   onBack: () => void;
   isProcessing: boolean;
   progress: number;
+  sendMode: 'now' | 'schedule';
+  onSendModeChange: (
+    value: 'now' | 'schedule',
+  ) => void;
+  scheduledAt: string;
+  onScheduledAtChange: (
+    value: string,
+  ) => void;
 }
 
 export function Step4ScheduleSend({
@@ -44,6 +52,10 @@ export function Step4ScheduleSend({
   onBack,
   isProcessing,
   progress,
+  sendMode,
+  onSendModeChange,
+  scheduledAt,
+  onScheduledAtChange,
 }: Step4Props) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
@@ -142,6 +154,69 @@ export function Step4ScheduleSend({
         </div>
       </div>
 
+      <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+        <p className="text-sm font-medium text-white">
+          Send timing
+        </p>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant={
+              sendMode === 'now'
+                ? 'default'
+                : 'outline'
+            }
+            onClick={() =>
+              onSendModeChange('now')
+            }
+            disabled={isProcessing}
+          >
+            Send Now
+          </Button>
+
+          <Button
+            type="button"
+            variant={
+              sendMode === 'schedule'
+                ? 'default'
+                : 'outline'
+            }
+            onClick={() =>
+              onSendModeChange('schedule')
+            }
+            disabled={isProcessing}
+          >
+            Schedule
+          </Button>
+        </div>
+
+        {sendMode === 'schedule' && (
+          <div className="mt-4">
+            <label className="mb-1.5 block text-xs text-slate-400">
+              Schedule date & time
+            </label>
+
+            <Input
+              type="datetime-local"
+              value={scheduledAt}
+              min={
+                new Date()
+                  .toISOString()
+                  .slice(0, 16)
+              }
+              onChange={(event) =>
+                onScheduledAtChange(
+                  event.target.value,
+                )
+              }
+              disabled={isProcessing}
+              className="border-slate-700 bg-slate-800 text-white"
+            />
+          </div>
+        )}
+      </div>
+
       {/* Processing overlay */}
       {isProcessing && (
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
@@ -195,13 +270,17 @@ export function Step4ScheduleSend({
             }
           >
             <Send className="h-4 w-4" />
-            Send Broadcast
+            {sendMode === 'schedule'
+              ? 'Schedule Broadcast'
+              : 'Send Broadcast'}
           </DialogTrigger>
           <DialogContent className="border-slate-700 bg-slate-900 sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="text-white">Confirm Broadcast</DialogTitle>
               <DialogDescription className="text-slate-400">
-                You are about to send this broadcast to{' '}
+                You are about to {sendMode === 'schedule'
+                  ? 'schedule'
+                  : 'send'} this broadcast to{' '}
                 <span className="font-medium text-white">{estimatedReach.toLocaleString()}</span>{' '}
                 contacts using the{' '}
                 <span className="font-medium text-white">{template.name}</span> template.
@@ -224,7 +303,9 @@ export function Step4ScheduleSend({
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 <Send className="h-4 w-4" />
-                Confirm & Send
+                {sendMode === 'schedule'
+                  ? 'Confirm & Schedule'
+                  : 'Confirm & Send'}
               </Button>
             </DialogFooter>
           </DialogContent>

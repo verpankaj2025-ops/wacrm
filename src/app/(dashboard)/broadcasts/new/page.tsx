@@ -42,29 +42,126 @@ export default function NewBroadcastPage() {
     Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>
   >({});
   const [name, setName] = useState('');
+  const [sendMode, setSendMode] =
+    useState<'now' | 'schedule'>('now');
+  const [scheduledAt, setScheduledAt] =
+    useState('');
 
   async function handleSend() {
     if (!template) return;
 
+    if (sendMode === 'schedule') {
+      if (!scheduledAt) {
+        toast.error('Select a date and time.');
+        return;
+      }
+
+      const scheduledDate =
+        new Date(scheduledAt);
+
+      if (
+        Number.isNaN(scheduledDate.getTime()) ||
+        scheduledDate.getTime() <= Date.now()
+      ) {
+        toast.error(
+          'Scheduled time must be in the future.',
+        );
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          '/api/broadcasts/schedule',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name,
+              template_name: template.name,
+              template_language:
+                template.language ?? 'en_US',
+              template_variables:
+                variables,
+              audience: {
+                type: audience.type,
+                tagIds: audience.tagIds,
+                customField:
+                  audience.customField,
+                csvContacts:
+                  audience.csvContacts,
+                excludeTagIds:
+                  audience.excludeTagIds,
+              },
+              scheduled_at:
+                scheduledDate.toISOString(),
+            }),
+          },
+        );
+
+        const payload =
+          await response
+            .json()
+            .catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(
+            payload?.error ??
+              'Failed to schedule broadcast.',
+          );
+        }
+
+        toast.success(
+          'Broadcast scheduled successfully.',
+        );
+
+        router.push(
+          `/broadcasts/${payload.broadcast_id}`,
+        );
+      } catch (err) {
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : 'Failed to schedule broadcast.',
+        );
+      }
+
+      return;
+    }
+
     try {
-      const broadcastId = await createAndSendBroadcast({
-        name,
-        template,
-        audience: {
-          type: audience.type,
-          tagIds: audience.tagIds,
-          customField: audience.customField,
-          csvContacts: audience.csvContacts,
-          excludeTagIds: audience.excludeTagIds,
-        },
-        variables,
-      });
-      router.push(`/broadcasts/${broadcastId}`);
+      const broadcastId =
+        await createAndSendBroadcast({
+          name,
+          template,
+          audience: {
+            type: audience.type,
+            tagIds: audience.tagIds,
+            customField:
+              audience.customField,
+            csvContacts:
+              audience.csvContacts,
+            excludeTagIds:
+              audience.excludeTagIds,
+          },
+          variables,
+        });
+
+      router.push(
+        `/broadcasts/${broadcastId}`,
+      );
     } catch (err) {
-      // Previously swallowed with console.error — the wizard would
-      // just no-op, leaving the user confused. Surface the reason.
-      const message = err instanceof Error ? err.message : 'Broadcast failed';
-      console.error('Broadcast failed:', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Broadcast failed';
+
+      console.error(
+        'Broadcast failed:',
+        err,
+      );
+
       toast.error(message);
     }
   }
@@ -220,6 +317,10 @@ export default function NewBroadcastPage() {
               onBack={() => setCurrentStep(2)}
               isProcessing={isProcessing}
               progress={progress}
+              sendMode={sendMode}
+              onSendModeChange={setSendMode}
+              scheduledAt={scheduledAt}
+              onScheduledAtChange={setScheduledAt}
             />
           )}
         </div>

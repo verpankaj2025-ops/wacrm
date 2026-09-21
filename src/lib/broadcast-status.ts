@@ -38,6 +38,10 @@ export const broadcastStatusConfig: Record<BroadcastStatus, StatINRisplay> = {
     label: "Sent",
     classes: "bg-primary/10 text-primary border-primary/20",
   },
+  cancelled: {
+    label: "Cancelled",
+    classes: "bg-slate-500/10 text-slate-400 border-slate-500/20",
+  },
   failed: {
     label: "Failed",
     classes: "bg-red-500/10 text-red-400 border-red-500/20",
@@ -64,6 +68,10 @@ export const recipientStatusConfig: Record<RecipientStatus, StatINRisplay> = {
   replied: {
     label: "Replied",
     classes: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  },
+  cancelled: {
+    label: "Cancelled",
+    classes: "bg-slate-500/10 text-slate-400 border-slate-500/20",
   },
   failed: {
     label: "Failed",

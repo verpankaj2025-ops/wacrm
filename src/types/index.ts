@@ -372,8 +372,8 @@ export interface Deal {
   assignee?: Profile;
 }
 
-export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
-export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
+export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'cancelled' | 'failed';
+export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'cancelled' | 'failed';
 
 export interface Broadcast {
   id: string;
@@ -392,6 +392,8 @@ export interface Broadcast {
   replied_count: number;
   failed_count: number;
   created_at: string;
+  started_at?: string;
+  cancelled_at?: string;
 }
 
 export interface BroadcastRecipient {

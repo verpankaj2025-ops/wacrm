@@ -117,6 +117,7 @@ const RECIPIENT_STATUSES: readonly RecipientStatus[] = [
   'delivered',
   'read',
   'replied',
+  'cancelled',
   'failed',
 ];
 
@@ -223,6 +224,83 @@ export default function BroadcastDetailPage() {
     downloadBlob(`broadcast-${safeName}-${broadcastId.slice(0, 8)}.csv`, csv);
   }
 
+  async function handleCancelBroadcast() {
+    if (
+      !broadcast ||
+      !['draft', 'scheduled', 'sending'].includes(
+        broadcast.status,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/broadcasts/${broadcastId}/action`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+          body: JSON.stringify({
+            action: 'cancel',
+          }),
+        },
+      );
+
+      const payload =
+        await response
+          .json()
+          .catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ??
+            'Unable to cancel broadcast.',
+        );
+      }
+
+      toast.success(
+        'Broadcast cancelled.',
+      );
+
+      setBroadcast(
+        (current) =>
+          current
+            ? {
+                ...current,
+                status:
+                  'cancelled',
+                cancelled_at:
+                  new Date().toISOString(),
+              }
+            : current,
+      );
+
+      setRecipients(
+        (current) =>
+          current.map(
+            (recipient) =>
+              recipient.status ===
+              'pending'
+                ? {
+                    ...recipient,
+                    status:
+                      'cancelled',
+                  }
+                : recipient,
+          ),
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Unable to cancel broadcast.',
+      );
+    }
+  }
+
   async function handleDelete() {
     setDeleting(true);
     const supabase = createClient();
@@ -303,6 +381,27 @@ export default function BroadcastDetailPage() {
           </div>
         </div>
 
+        {['draft', 'scheduled', 'sending'].includes(
+          broadcast.status,
+        ) && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (
+                window.confirm(
+                  'Cancel this broadcast? Pending recipients will not be sent.',
+                )
+              ) {
+                void handleCancelBroadcast();
+              }
+            }}
+            className="border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+          >
+            Cancel Broadcast
+          </Button>
+        )}
+
         {/* Delete — inline-confirm pattern matches the pipeline-settings
             "Delete Pipeline" flow. Mid-send broadcasts can't be deleted
             because orphaning in-flight Meta messages would leave the
@@ -332,7 +431,10 @@ export default function BroadcastDetailPage() {
           <Button
             variant="outline"
             size="sm"
-            disabled={broadcast.status === 'sending'}
+            disabled={
+              broadcast.status === 'sending' ||
+              broadcast.status === 'scheduled'
+            }
             onClick={() => setConfirmDelete(true)}
             title={
               broadcast.status === 'sending'
