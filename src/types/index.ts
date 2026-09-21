@@ -321,6 +321,32 @@ export interface PipelineStage {
 
 export type DealStatus = 'open' | 'won' | 'lost';
 
+export type AppointmentStatus =
+  | 'scheduled'
+  | 'confirmed'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show';
+
+export interface Appointment {
+  id: string;
+  account_id: string;
+  contact_id: string;
+  conversation_id?: string | null;
+  assigned_to?: string | null;
+  service_name: string;
+  start_at: string;
+  end_at: string;
+  status: AppointmentStatus;
+  notes?: string | null;
+  source: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  contact?: Contact | null;
+  assignee?: Profile | null;
+}
+
 export interface Deal {
   id: string;
   user_id: string;
