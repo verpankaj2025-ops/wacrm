@@ -39,6 +39,7 @@ export interface AutomationContext {
   /** Agent the conversation was assigned to, for conversation_assigned. */
   agent_id?: string
   automation_started_at?: string
+  enrollment_id?: string
 }
 
 export interface DispatchInput {
@@ -299,18 +300,16 @@ export async function cancelPendingFollowupsForContact(
   const db =
     supabaseAdmin()
 
-  await db
+  const {
+    data: pendingRows,
+    error: lookupError,
+  } = await db
     .from(
       'automation_pending_executions',
     )
-    .update({
-      status:
-        'cancelled',
-      cancelled_at:
-        new Date().toISOString(),
-      cancel_reason:
-        reason,
-    })
+    .select(
+      'id, context',
+    )
     .eq(
       'account_id',
       accountId,
@@ -327,6 +326,90 @@ export async function cancelPendingFollowupsForContact(
       'cancel_on_customer_reply',
       true,
     )
+
+  if (lookupError) {
+    console.error(
+      '[automations] follow-up cancellation lookup failed:',
+      lookupError,
+    )
+    return
+  }
+
+  if (!pendingRows?.length) {
+    return
+  }
+
+  const cancelledAt =
+    new Date().toISOString()
+
+  const pendingIds =
+    pendingRows.map(
+      (row) => row.id,
+    )
+
+  await db
+    .from(
+      'automation_pending_executions',
+    )
+    .update({
+      status:
+        'cancelled',
+      cancelled_at:
+        cancelledAt,
+      cancel_reason:
+        reason,
+    })
+    .in(
+      'id',
+      pendingIds,
+    )
+
+  const enrollmentIds =
+    pendingRows
+      .map(
+        (row) =>
+          (
+            row.context ?? {}
+          ) as Record<
+            string,
+            unknown
+          >,
+      )
+      .map(
+        (context) =>
+          String(
+            context.enrollment_id ??
+              '',
+          ).trim(),
+      )
+      .filter(Boolean)
+
+  if (
+    enrollmentIds.length
+  ) {
+    await db
+      .from(
+        'automation_enrollments',
+      )
+      .update({
+        status:
+          'cancelled',
+        cancelled_at:
+          cancelledAt,
+        error_message:
+          reason,
+        updated_at:
+          cancelledAt,
+      })
+      .eq(
+        'account_id',
+        accountId,
+      )
+      .in(
+        'id',
+        enrollmentIds,
+      )
+  }
 }
 
 export async function replayAutomation(params: {
@@ -476,9 +559,46 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
     return
   }
   if (!steps || steps.length === 0) {
-    if (args.parentStepId === null && args.logId) {
-      await finalizeLog(args.logId, 'success', null)
+    if (
+      args.parentStepId === null &&
+      args.logId
+    ) {
+      await finalizeLog(
+        args.logId,
+        'success',
+        null,
+      )
     }
+
+    if (
+      args.parentStepId === null &&
+      args.context.enrollment_id
+    ) {
+      const completedAt =
+        new Date().toISOString()
+
+      await db
+        .from(
+          'automation_enrollments',
+        )
+        .update({
+          status:
+            'completed',
+          completed_at:
+            completedAt,
+          last_run_at:
+            completedAt,
+          next_run_at:
+            null,
+          updated_at:
+            completedAt,
+        })
+        .eq(
+          'id',
+          args.context.enrollment_id,
+        )
+    }
+
     return
   }
 
@@ -500,27 +620,85 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
     // `wait` is the suspension point: enqueue and stop processing this
     // scope. The cron endpoint will pick it up later.
     if (step.step_type === 'wait') {
-      const cfg = step.step_config as WaitStepConfig
-      const ms = waitMs(cfg)
-      await db.from('automation_pending_executions').insert({
-        automation_id: args.automation.id,
-        // Tenancy: account_id required NOT NULL post-017.
-        account_id: args.automation.account_id,
-        user_id: args.automation.user_id,
-        contact_id: args.contactId,
-        log_id: args.logId,
-        parent_step_id: args.parentStepId,
-        branch: args.branch,
-        next_step_position: step.position + 1,
-        context: args.context,
-        run_at: new Date(
+      const cfg =
+        step.step_config as WaitStepConfig
+
+      const ms =
+        waitMs(cfg)
+
+      const nextRunAt =
+        new Date(
           Date.now() + ms,
-        ).toISOString(),
-        status: 'pending',
-        cancel_on_customer_reply:
-          !!args.automation
-            .cancel_on_customer_reply,
-      })
+        ).toISOString()
+
+      const {
+        error: pendingError,
+      } =
+        await db
+          .from(
+            'automation_pending_executions',
+          )
+          .insert({
+            automation_id:
+              args.automation.id,
+            account_id:
+              args.automation.account_id,
+            user_id:
+              args.automation.user_id,
+            contact_id:
+              args.contactId,
+            log_id:
+              args.logId,
+            parent_step_id:
+              args.parentStepId,
+            branch:
+              args.branch,
+            next_step_position:
+              step.position + 1,
+            context:
+              args.context,
+            run_at:
+              nextRunAt,
+            status:
+              'pending',
+            cancel_on_customer_reply:
+              !!args.automation
+                .cancel_on_customer_reply,
+          })
+
+      if (pendingError) {
+        throw new Error(
+          pendingError.message,
+        )
+      }
+
+      if (
+        args.context.enrollment_id
+      ) {
+        const now =
+          new Date().toISOString()
+
+        await db
+          .from(
+            'automation_enrollments',
+          )
+          .update({
+            status:
+              'running',
+            last_run_at:
+              now,
+            next_run_at:
+              nextRunAt,
+            current_step_position:
+              step.position + 1,
+            updated_at:
+              now,
+          })
+          .eq(
+            'id',
+            args.context.enrollment_id,
+          )
+      }
       results.push({
         step_id: step.id,
         step_type: step.step_type,

@@ -200,17 +200,32 @@ export default function AutomationsPage() {
             </div>
           </div>
 
-          <Button
-            onClick={() =>
-              router.push(
-                "/automations/new?preset=spa_followup",
-              )
-            }
-            className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Build Sequence
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() =>
+                router.push(
+                  "/automations/followups",
+                )
+              }
+              className="border-slate-700 text-slate-300 hover:bg-slate-800"
+            >
+              <Clock className="mr-2 h-4 w-4" />
+              Follow-up Leads
+            </Button>
+
+            <Button
+              onClick={() =>
+                router.push(
+                  "/automations/new?preset=spa_followup",
+                )
+              }
+              className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Build Sequence
+            </Button>
+          </div>
         </div>
       </section>
 

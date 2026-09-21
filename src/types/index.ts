@@ -530,6 +530,32 @@ export type AutomationStepConfig =
   | Record<string, never>
   | Record<string, unknown>;
 
+export interface AutomationEnrollment {
+  id: string
+  account_id: string
+  automation_id: string
+  contact_id: string
+  status:
+    | 'pending'
+    | 'running'
+    | 'paused'
+    | 'completed'
+    | 'cancelled'
+    | 'failed'
+  started_at?: string | null
+  completed_at?: string | null
+  cancelled_at?: string | null
+  paused_at?: string | null
+  last_run_at?: string | null
+  next_run_at?: string | null
+  current_step_position: number
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+  contact?: Contact
+  automation?: Automation
+}
+
 export interface Automation {
   id: string;
   /** Account tenancy key — every automation belongs to one account

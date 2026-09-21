@@ -5,7 +5,10 @@ import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
-import { runAutomationsForTrigger } from '@/lib/automations/engine'
+import {
+  runAutomationsForTrigger,
+  cancelPendingFollowupsForContact,
+} from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { routeToAI } from '@/lib/ai/router'
 import { processAIIntent } from '@/lib/ai/crm-actions'
@@ -687,6 +690,13 @@ if (convError) {
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
+  await cancelPendingFollowupsForContact(
+    accountId,
+    contactRecord.id,
+    'customer_reply',
+  )
+
+  // A new customer reply starts a fresh 24h customer-service window.
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
 
   // ============================================================

@@ -13,6 +13,7 @@ type ImportRow = {
   company?: string;
   sequence?: string;
   opt_in?: boolean;
+  start_at?: string;
 };
 
 function normaliseSequenceValue(
@@ -558,8 +559,25 @@ export async function POST(
           continue;
         }
 
+        const scheduledAt =
+          row.start_at
+            ? new Date(
+                row.start_at,
+              )
+            : new Date()
+
+        if (
+          Number.isNaN(
+            scheduledAt.getTime(),
+          )
+        ) {
+          throw new Error(
+            `Invalid start_at "${row.start_at}". Use ISO format such as 2026-09-22T10:30:00+05:30.`,
+          )
+        }
+
         const startedAt =
-          new Date().toISOString();
+          scheduledAt.toISOString()
 
         const {
           data:
@@ -580,6 +598,10 @@ export async function POST(
                 contactId,
               status:
                 "pending",
+              next_run_at:
+                startedAt,
+              current_step_position:
+                0,
             })
             .select(
               "id",

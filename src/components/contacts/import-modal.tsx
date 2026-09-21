@@ -49,6 +49,7 @@ interface ParsedRow {
   company?: string;
   sequence?: string;
   opt_in?: boolean;
+  start_at?: string;
 }
 
 interface AutomationOption {
@@ -235,6 +236,14 @@ function parseWorkbook(
       'whatsapp_consent',
     );
 
+  const startAtIndex =
+    indexOf(
+      'start_at',
+      'start_time',
+      'next_followup_at',
+      'next_followup',
+    );
+
   const rows: ParsedRow[] =
     [];
 
@@ -295,6 +304,14 @@ function parseWorkbook(
           ? parseOptIn(
               row[optInIndex],
             )
+          : undefined,
+      start_at:
+        startAtIndex >= 0
+          ? String(
+              row[startAtIndex] ??
+                '',
+            ).trim() ||
+            undefined
           : undefined,
     });
   }
