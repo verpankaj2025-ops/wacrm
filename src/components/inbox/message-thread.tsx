@@ -43,6 +43,8 @@ import { MessageComposer } from "./message-composer";
 import { TemplatePicker } from "./template-picker";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
+import type { ConversationControlAction } from "@/lib/conversations/control";
+import { ConversationControlMenu } from "./conversation-control-menu";
 
 interface ReplyDraft {
   id: string;
@@ -197,6 +199,17 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+
+  const [controlMode, setControlMode] =
+    useState<
+      "ai" | "human" | "paused"
+    >("ai");
+
+  useEffect(() => {
+    setControlMode(
+      conversation?.control_mode ?? "ai",
+    );
+  }, [conversation?.id, conversation?.control_mode]);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -774,15 +787,46 @@ setShowScrollToBottom(!stick);
     async (status: ConversationStatus) => {
       if (!conversation) return;
 
-      const supabase = createClient();
-      await supabase
-        .from("conversations")
-        .update({ status })
-        .eq("id", conversation.id);
+      try {
+        const res = await fetch(
+          `/api/conversations/${conversation.id}/control`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "set_status",
+              status,
+            }),
+          },
+        );
 
-      onStatusChange(conversation.id, status);
+        const payload = await res.json().catch(
+          () => ({}),
+        );
+
+        if (!res.ok) {
+          throw new Error(
+            payload?.error ||
+              `HTTP ${res.status}`,
+          );
+        }
+
+        onStatusChange(
+          conversation.id,
+          status,
+        );
+      } catch (err) {
+        const reason =
+          err instanceof Error
+            ? err.message
+            : "Failed to update status";
+
+        toast.error(reason);
+      }
     },
-    [conversation, onStatusChange]
+    [conversation, onStatusChange],
   );
 
   const handleOpenTemplates = useCallback(() => {
@@ -970,21 +1014,149 @@ setShowScrollToBottom(!stick);
     async (agentId: string | null) => {
       if (!conversation) return;
 
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("conversations")
-        .update({ assigned_agent_id: agentId })
-        .eq("id", conversation.id);
+      try {
+        const action =
+          agentId === null
+            ? "unassign"
+            : "assign";
 
-      if (error) {
-        console.error("Failed to update assignment:", error);
-        toast.error("Failed to update assignment");
-        return;
+        const res = await fetch(
+          `/api/conversations/${conversation.id}/control`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action,
+              ...(agentId
+                ? { agent_id: agentId }
+                : {}),
+            }),
+          },
+        );
+
+        const payload = await res.json().catch(
+          () => ({}),
+        );
+
+        if (!res.ok) {
+          throw new Error(
+            payload?.error ||
+              `HTTP ${res.status}`,
+          );
+        }
+
+        onAssignChange(
+          conversation.id,
+          agentId,
+        );
+      } catch (err) {
+        const reason =
+          err instanceof Error
+            ? err.message
+            : "Failed to update assignment";
+
+        toast.error(reason);
       }
-
-      onAssignChange(conversation.id, agentId);
     },
     [conversation, onAssignChange],
+  );
+
+  const handleControlAction = useCallback(
+    async (
+      action: ConversationControlAction,
+    ) => {
+      if (!conversation) return;
+
+      try {
+        const res = await fetch(
+          `/api/conversations/${conversation.id}/control`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action,
+            }),
+          },
+        );
+
+        const payload = await res.json().catch(
+          () => ({}),
+        );
+
+        if (!res.ok) {
+          throw new Error(
+            payload?.error ||
+              `HTTP ${res.status}`,
+          );
+        }
+
+        const next =
+          payload?.conversation;
+
+        if (
+          next &&
+          typeof next.control_mode ===
+            "string"
+        ) {
+          setControlMode(
+            next.control_mode,
+          );
+        }
+
+        if (next?.status) {
+          onStatusChange(
+            conversation.id,
+            next.status,
+          );
+        }
+
+        if (
+          "assigned_agent_id" in
+          (next || {})
+        ) {
+          onAssignChange(
+            conversation.id,
+            next.assigned_agent_id ??
+              null,
+          );
+        }
+
+        toast.success(
+          action === "handoff"
+            ? "Conversation handed to human"
+            : action === "pause_ai"
+              ? "Automation paused"
+              : action === "resume_ai"
+                ? "AI resumed"
+                : action === "claim"
+                  ? "Conversation claimed"
+                  : action === "release"
+                    ? "Conversation released"
+                    : action === "close"
+                      ? "Conversation closed"
+                      : action ===
+                          "reopen"
+                        ? "Conversation reopened"
+                        : "Conversation updated",
+        );
+      } catch (err) {
+        const reason =
+          err instanceof Error
+            ? err.message
+            : "Conversation control failed";
+
+        toast.error(reason);
+      }
+    },
+    [
+      conversation,
+      onAssignChange,
+      onStatusChange,
+    ],
   );
 
   // Empty state — same WhatsApp-style doodle background as the active
@@ -1078,6 +1250,13 @@ setShowScrollToBottom(!stick);
               />
             </button>
           )}
+
+          <ConversationControlMenu
+            mode={controlMode}
+            status={conversation.status}
+            busy={false}
+            onAction={handleControlAction}
+          />
 
           {/* Status dropdown */}
           <DropdownMenu>

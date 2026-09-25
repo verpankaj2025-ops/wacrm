@@ -1034,7 +1034,11 @@ async function handleReplyForActiveRun(
     if (run.conversation_id) {
       await db
         .from("conversations")
-        .update({ status: "pending", updated_at: new Date().toISOString() })
+        .update({
+          status: "pending",
+          control_mode: "human",
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", run.conversation_id);
     }
     await logEvent(db, run.id, "handoff", run.current_node_key, {

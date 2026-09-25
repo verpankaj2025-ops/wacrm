@@ -328,15 +328,21 @@ export async function POST(request: Request) {
         { error: `Message sent to Meta but failed to save to DB: ${msgError.message}` },
         { status: 500 }
       )
-    }
-
-    // Update conversation
+    }    // Manual agent send is an explicit human takeover.
     await supabase
       .from('conversations')
       .update({
-        last_message_text: content_text || `[${message_type}]`,
-        last_message_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        last_message_text:
+          content_text ||
+          `[${message_type}]`,
+        last_message_at:
+          new Date().toISOString(),
+        updated_at:
+          new Date().toISOString(),
+        control_mode:
+          'human',
+        assigned_agent_id:
+          user.id,
       })
       .eq('id', conversation_id)
 

@@ -675,6 +675,17 @@ async function processMessage(
   )
   if (!conversation) return
 
+  // Conversation Control Engine.
+  // `ai` allows automated Flow/AI handling.
+  // `human` and `paused` suppress automated replies.
+  // Legacy rows without the column are treated as `ai`.
+  const conversationControlMode =
+    conversation.control_mode ?? "ai";
+
+  const automatedInboundHandlingEnabled =
+    conversationControlMode === "ai";
+
+
   // Reactions short-circuit here — they aren't messages. We never insert
   // into `messages`, never bump unread_count, never update last_message_text.
   // Done before parseMessageContent so the media-URL fetch is skipped.
@@ -815,36 +826,50 @@ if (convError) {
   // no active flows take the runner's early-exit "no_match" path
   // basically for free (one indexed SELECT for the active run).
   // ============================================================
-  const flowResult = await dispatchInboundToFlows({
-    accountId,
-    userId: configOwnerUserId,
-    contactId: contactRecord.id,
-    conversationId: conversation.id,
-    message:
-      interactiveReplyId
-        ? {
-            kind: 'interactive_reply',
-            reply_id: interactiveReplyId,
-            reply_title: contentText ?? '',
-            meta_message_id: message.id,
-          }
-        : {
-            kind: 'text',
-            text: contentText ?? message.text?.body ?? '',
-            meta_message_id: message.id,
-          },
-    isFirstInboundMessage,
-  })
-  const flowConsumed = flowResult.consumed
-  
-  const inboundText = contentText ?? message.text?.body ?? ''
+  const flowResult =
+    automatedInboundHandlingEnabled
+      ? await dispatchInboundToFlows({
+          accountId,
+          userId: configOwnerUserId,
+          contactId: contactRecord.id,
+          conversationId: conversation.id,
+          message:
+            interactiveReplyId
+              ? {
+                  kind: 'interactive_reply',
+                  reply_id: interactiveReplyId,
+                  reply_title:
+                    contentText ?? '',
+                  meta_message_id:
+                    message.id,
+                }
+              : {
+                  kind: 'text',
+                  text:
+                    contentText ??
+                    message.text?.body ??
+                    '',
+                  meta_message_id:
+                    message.id,
+                },
+          isFirstInboundMessage,
+        })
+      : null
+
+  const flowConsumed =
+    flowResult?.consumed ?? false
+const inboundText = contentText ?? message.text?.body ?? ''
 
   logger.debug("ai_processing_started", {
   flowConsumed,
   hasInboundText: inboundText.trim().length > 0,
 })
 
-  if (!flowConsumed && inboundText.trim()) {
+  if (
+    automatedInboundHandlingEnabled &&
+    !flowConsumed &&
+    inboundText.trim()
+  ) {
   try {
     const aiResult = await routeToAI(inboundText)
 
@@ -916,8 +941,14 @@ console.log("[AI SEND SUCCESS]")
   )[] = []
   // Content-level triggers are suppressed when a flow consumed the
   // message — see the comment block above.
-  if (!flowConsumed) {
-    automationTriggers.push('new_message_received', 'keyword_match')
+  if (
+    automatedInboundHandlingEnabled &&
+    !flowConsumed
+  ) {
+    automationTriggers.push(
+      'new_message_received',
+      'keyword_match',
+    )
   }
   // new_contact_created fires only when the webhook just auto-created the
   // contact row. first_inbound_message fires whenever this is the contact's

@@ -144,12 +144,19 @@ export interface ContactNote {
 
 export type ConversationStatus = 'open' | 'pending' | 'closed';
 
+export type ConversationControlMode = 'ai' | 'human' | 'paused';
+
 export interface Conversation {
   id: string;
   user_id: string;
   contact_id: string;
   status: ConversationStatus;
-  assigned_agent_id?: string;
+  assigned_agent_id?: string | null;
+  control_mode?: ConversationControlMode;
+  control_locked_by?: string | null;
+  control_locked_at?: string | null;
+  closed_at?: string | null;
+  closed_by?: string | null;
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;
