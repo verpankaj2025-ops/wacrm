@@ -17,6 +17,9 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import {
+  formatMetaStatusErrors,
+} from '@/lib/whatsapp/status-error'
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,6 +96,14 @@ interface WhatsAppWebhookEntry {
         status: string
         timestamp: string
         recipient_id: string
+        errors?: Array<{
+          code?: number | string
+          title?: string
+          message?: string
+          error_data?: {
+            details?: string
+          }
+        }>
       }>
     }
     field: string
@@ -375,7 +386,36 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{
+    code?: number | string
+    title?: string
+    message?: string
+    error_data?: {
+      details?: string
+    }
+  }>
 }) {
+  const metaError =
+    status.status === 'failed'
+      ? formatMetaStatusErrors(
+          status.errors,
+        )
+      : null
+
+  if (status.status === 'failed') {
+    logger.warn(
+      'whatsapp_message_delivery_failed',
+      {
+        messageId: status.id,
+        recipientId:
+          status.recipient_id,
+        error:
+          metaError ??
+          'WhatsApp message delivery failed.',
+      },
+    )
+  }
+
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status.
   const { error: msgErr } = await supabaseAdmin()
@@ -409,10 +449,30 @@ async function handleStatusUpdate(status: {
   // `failed` only from pre-delivered states.
   if (!isValidStatusTransition(recipient.status, status.status)) return
 
-  const update: Record<string, unknown> = { status: status.status }
-  if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
-  if (status.status === 'delivered') update.delivered_at = tsIso
-  if (status.status === 'read') update.read_at = tsIso
+  const update: Record<string, unknown> = {
+    status: status.status,
+  }
+
+  if (status.status === 'failed') {
+    update.error_message =
+      metaError ??
+      'WhatsApp message delivery failed.'
+  }
+
+  if (
+    status.status === 'sent' &&
+    !('sent_at' in update)
+  ) {
+    update.sent_at = tsIso
+  }
+
+  if (status.status === 'delivered') {
+    update.delivered_at = tsIso
+  }
+
+  if (status.status === 'read') {
+    update.read_at = tsIso
+  }
 
   const { error: recUpdateErr } = await supabaseAdmin()
     .from('broadcast_recipients')
