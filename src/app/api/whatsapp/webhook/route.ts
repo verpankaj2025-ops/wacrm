@@ -445,6 +445,43 @@ async function handleStatusUpdate(status: {
   }
   if (!recipient) return // message wasn't part of a broadcast — fine
 
+  // A Meta failed webhook may arrive after the initial send attempt has
+  // already marked the recipient as failed. In that case, allow the
+  // detailed Meta error to fill/update error_message, but do not
+  // regress any delivered/read/replied recipient.
+  if (
+    status.status === 'failed' &&
+    recipient.status === 'failed'
+  ) {
+    if (metaError) {
+      const { error: failedDetailUpdateError } =
+        await supabaseAdmin()
+          .from('broadcast_recipients')
+          .update({
+            error_message: metaError,
+          })
+          .eq('id', recipient.id)
+
+      if (failedDetailUpdateError) {
+        console.error(
+          'Error updating failed broadcast recipient detail:',
+          failedDetailUpdateError,
+        )
+      } else {
+        logger.info(
+          'whatsapp_message_failure_detail_saved',
+          {
+            messageId: status.id,
+            recipientId: status.recipient_id,
+            error: metaError,
+          },
+        )
+      }
+    }
+
+    return
+  }
+
   // Guard transitions — forward-only on the success ladder, and
   // `failed` only from pre-delivered states.
   if (!isValidStatusTransition(recipient.status, status.status)) return
