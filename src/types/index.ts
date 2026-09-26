@@ -100,6 +100,15 @@ export interface Contact {
   lead_status?: string;
   assigned_to?: string | null;
 
+  // Lead Scoring (036)
+  lead_score?: number;
+  lead_score_band?:
+    | 'low'
+    | 'medium'
+    | 'high';
+  lead_score_reasons?: string[];
+  lead_score_updated_at?: string;
+
   created_at: string;
   updated_at: string;
 }

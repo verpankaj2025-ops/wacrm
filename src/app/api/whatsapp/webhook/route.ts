@@ -17,6 +17,7 @@ import {
   getCustomerMemories,
   upsertCustomerMemoryFacts,
 } from '@/lib/customer-memory'
+import { recalculateLeadScore } from '@/lib/lead-scoring'
 import { processAIIntent } from '@/lib/ai/crm-actions'
 import { engineSendText } from '@/lib/automations/meta-send'
 import {
@@ -951,7 +952,30 @@ const inboundText = contentText ?? message.text?.body ?? ''
       userId: configOwnerUserId,
     })
 
-    if (!aiResult.handoff) {
+
+    try {
+      await recalculateLeadScore({
+        accountId,
+        contactId:
+          contactRecord.id,
+        currentIntent:
+          aiResult.intent,
+      })
+    } catch (scoreError) {
+      logger.warn(
+        "lead_score_recalculation_failed",
+        {
+          error:
+            scoreError instanceof Error
+              ? scoreError.message
+              : String(scoreError),
+          contactId:
+            contactRecord.id,
+        },
+      )
+    }
+
+if (!aiResult.handoff) {
       console.log("[AI SEND START]", aiResult.reply)
 
 await engineSendText({
@@ -1002,7 +1026,7 @@ console.log("[AI SEND SUCCESS]")
   // message all exist before any step — including send_message — runs.
   // Fire-and-forget: a slow or failing automation must not block the
   // webhook's 200 OK response to Meta.
-  
+
   const automationTriggers: (
     | 'new_contact_created'
     | 'first_inbound_message'

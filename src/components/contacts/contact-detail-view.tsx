@@ -713,6 +713,69 @@ setEditAssignedTo(data.assigned_to ?? '');
 
 <div className="space-y-1.5">
   <Label className="text-slate-400 text-xs">
+    Lead Score
+  </Label>
+
+  <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-2xl font-semibold text-white">
+          {contact?.lead_score ?? 0}
+        </span>
+        <span className="text-xs text-slate-500">
+          / 100
+        </span>
+      </div>
+
+      <Badge
+        variant="outline"
+        className="capitalize border-slate-600 text-slate-300"
+      >
+        {contact?.lead_score_band ?? 'low'}
+      </Badge>
+    </div>
+
+    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-700">
+      <div
+        className="h-full rounded-full bg-primary transition-all"
+        style={{
+          width: `${Math.max(
+            0,
+            Math.min(
+              100,
+              contact?.lead_score ?? 0,
+            ),
+          )}%`,
+        }}
+      />
+    </div>
+
+    {Array.isArray(
+      contact?.lead_score_reasons,
+    ) &&
+      contact.lead_score_reasons.length > 0 && (
+        <div className="mt-3 space-y-1">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            Score Factors
+          </p>
+
+          {contact.lead_score_reasons.map(
+            (reason) => (
+              <p
+                key={reason}
+                className="text-xs text-slate-400"
+              >
+                {reason}
+              </p>
+            ),
+          )}
+        </div>
+      )}
+  </div>
+</div>
+
+<div className="space-y-1.5">
+  <Label className="text-slate-400 text-xs">
     Assigned User
   </Label>
 
