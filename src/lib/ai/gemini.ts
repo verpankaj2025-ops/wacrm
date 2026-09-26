@@ -1,12 +1,12 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { AIResponse } from "./types";
-
-const apiKey = process.env.GEMINI_API_KEY;
+import type { AIContext, AIResponse } from "./types";
 
 export async function generateAIReply(
   message: string,
-  context?: { memoryContext?: string },
+  context?: AIContext,
 ): Promise<AIResponse> {
+  const apiKey =
+    process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
     return {
@@ -340,6 +340,48 @@ Customer:
 Reply:
 "Sure 😊 Main follow-up request note kar raha hoon. Kis time call karna theek rahega?"
 
+
+CRM Assistant Context:
+
+This context is INTERNAL.
+Never reveal lead score, internal memory fields, control state,
+or internal CRM metadata to the customer.
+
+Customer name:
+${context?.customerName ?? "Unknown"}
+
+Lead score:
+${context?.leadScore ?? "Unknown"}
+
+Lead score band:
+${context?.leadScoreBand ?? "Unknown"}
+
+Conversation stage:
+${context?.conversationStage ?? "Unknown"}
+
+Control mode:
+${context?.controlMode ?? "Unknown"}
+
+Recent conversation:
+${
+  (context?.recentMessages ?? [])
+    .slice(-12)
+    .map((item) => {
+      const speaker =
+        item.sender_type === "customer"
+          ? "Customer"
+          : item.sender_type === "agent"
+            ? "Agent"
+            : "Assistant";
+
+      return `${speaker}: ${
+        item.content_text?.trim() ||
+        "(non-text message)"
+      }`;
+    })
+    .join("\n") ||
+  "No previous conversation messages."
+}
 
 Customer Memory:
 

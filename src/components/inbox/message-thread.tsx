@@ -155,6 +155,12 @@ export function MessageThread({
 }: MessageThreadProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [aiLoading, setAiLoading] =
+    useState(false);
+
+  const [aiDraft, setAiDraft] =
+    useState<string | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -745,6 +751,7 @@ setShowScrollToBottom(!stick);
       };
       onNewMessage(optimisticMsg);
       setReplyTo(null);
+      setAiDraft(null);
 
       try {
         const res = await fetch("/api/whatsapp/send", {
@@ -782,6 +789,200 @@ setShowScrollToBottom(!stick);
     },
     [conversation, onNewMessage, onUpdateMessage]
   );
+
+  const latestCustomerMessage =
+
+    useMemo(() => {
+
+      for (
+
+        let index =
+
+          messages.length - 1;
+
+        index >= 0;
+
+        index -= 1
+
+      ) {
+
+        const message =
+
+          messages[index];
+
+
+        if (
+
+          message.sender_type ===
+
+            "customer" &&
+
+          message.content_text?.trim()
+
+        ) {
+
+          return message.content_text.trim();
+
+        }
+
+      }
+
+
+      return "";
+
+    }, [messages]);
+
+
+  const handleGenerateAIReply =
+
+    useCallback(
+
+      async () => {
+
+        if (
+
+          !conversation ||
+
+          controlMode !== "ai" ||
+
+          !latestCustomerMessage ||
+
+          aiLoading
+
+        ) {
+
+          return;
+
+        }
+
+
+        setAiLoading(true);
+
+
+        try {
+
+          const response =
+
+            await fetch(
+
+              "/api/ai/chat",
+
+              {
+
+                method: "POST",
+
+                headers: {
+
+                  "Content-Type":
+
+                    "application/json",
+
+                },
+
+                body: JSON.stringify({
+
+                  message:
+
+                    latestCustomerMessage,
+
+                  conversation_id:
+
+                    conversation.id,
+
+                }),
+
+              },
+
+            );
+
+
+          const payload =
+
+            await response
+
+              .json()
+
+              .catch(() => ({}));
+
+
+          if (!response.ok) {
+
+            throw new Error(
+
+              payload?.error ||
+
+                `HTTP ${response.status}`,
+
+            );
+
+          }
+
+
+          if (
+
+            typeof payload?.reply !==
+
+              "string" ||
+
+            !payload.reply.trim()
+
+          ) {
+
+            throw new Error(
+
+              "AI returned an empty reply",
+
+            );
+
+          }
+
+
+          setAiDraft(
+
+            payload.reply.trim(),
+
+          );
+          toast.success(
+            "AI draft generated",
+          );
+
+
+        } catch (error) {
+
+          const reason =
+
+            error instanceof Error
+
+              ? error.message
+
+              : "AI assistant failed";
+
+
+          toast.error(reason);
+
+        } finally {
+
+          setAiLoading(false);
+
+        }
+
+      },
+
+      [
+
+        conversation,
+
+        controlMode,
+
+        latestCustomerMessage,
+
+        aiLoading,
+
+      ],
+
+    );
+
+
 
   const handleStatusChange = useCallback(
     async (status: ConversationStatus) => {
@@ -1493,7 +1694,14 @@ setShowScrollToBottom(!stick);
         sessionExpired={sessionInfo.expired}
         onSend={handleSend}
         onOpenTemplates={handleOpenTemplates}
-        replyTo={replyTo}
+        onAI={handleGenerateAIReply}
+         aiLoading={aiLoading}
+         aiDisabled={
+           controlMode !== "ai" ||
+           !latestCustomerMessage
+         }
+         aiDraft={aiDraft}
+         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
       />
 

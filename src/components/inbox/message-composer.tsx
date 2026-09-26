@@ -7,7 +7,7 @@ import {
   useEffect,
   KeyboardEvent,
 } from "react";
-import { Send, LayoutTemplate } from "lucide-react";
+import { Send, LayoutTemplate, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
@@ -26,6 +26,10 @@ interface MessageComposerProps {
   sessionExpired: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onOpenTemplates: () => void;
+  onAI?: () => Promise<void> | void;
+  aiLoading?: boolean;
+  aiDisabled?: boolean;
+  aiDraft?: string | null;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
 }
@@ -35,6 +39,10 @@ export function MessageComposer({
   sessionExpired,
   onSend,
   onOpenTemplates,
+  onAI,
+  aiLoading = false,
+  aiDisabled = false,
+  aiDraft,
   replyTo,
   onClearReply,
 }: MessageComposerProps) {
@@ -66,6 +74,17 @@ export function MessageComposer({
     // Max 4 lines (~96px)
     el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
   }, []);
+
+  useEffect(() => {
+    if (typeof aiDraft !== "string") return;
+
+    setText(aiDraft);
+
+    requestAnimationFrame(() => {
+      adjustHeight();
+      textareaRef.current?.focus();
+    });
+  }, [aiDraft, adjustHeight]);
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
@@ -133,6 +152,34 @@ if (textareaRef.current) {
       )}
 
       <div className="flex items-end gap-2">
+        {onAI && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void onAI()}
+            disabled={
+              readOnly ||
+              aiDisabled ||
+              aiLoading
+            }
+            title={
+              aiDisabled
+                ? "AI Assistant unavailable"
+                : "Generate AI reply"
+            }
+            className="h-9 w-9 shrink-0 p-0 text-slate-400 hover:text-white disabled:opacity-40"
+          >
+            <Sparkles
+              className={cn(
+                "h-4 w-4",
+                aiLoading &&
+                  "animate-pulse",
+              )}
+            />
+          </Button>
+        )}
+
         <GatedButton
           variant="ghost"
           size="sm"

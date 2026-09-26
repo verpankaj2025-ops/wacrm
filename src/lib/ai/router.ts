@@ -1,15 +1,17 @@
 import { generateAIReply } from "./gemini";
 import { getRuleBasedReply } from "./rule-router";
+import type {
+  AIContext,
+} from "./types";
 
-export interface AIContext {
-  memoryContext?: string;
-}
+export type {
+  AIContext,
+} from "./types";
 
 export async function routeToAI(
   message: string,
   context?: AIContext,
 ) {
-
   const ruleReply =
     getRuleBasedReply(message);
 
@@ -17,5 +19,8 @@ export async function routeToAI(
     return ruleReply;
   }
 
-  return generateAIReply(message, context);
+  return generateAIReply(
+    message,
+    context,
+  );
 }
