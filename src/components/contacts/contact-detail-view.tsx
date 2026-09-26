@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal } from '@/types';
+import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, CustomerMemory } from '@/types';
 import {
   Sheet,
   SheetContent,
@@ -90,6 +90,18 @@ const [teamMembers, setTeamMembers] = useState<
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const [savingCustom, setSavingCustom] = useState(false);
   const [loadingCustom, setLoadingCustom] = useState(false);
+
+  // Customer Memory tab
+  const [memories, setMemories] =
+    useState<CustomerMemory[]>([]);
+  const [loadingMemory, setLoadingMemory] =
+    useState(false);
+  const [memoryKey, setMemoryKey] =
+    useState('');
+  const [memoryValue, setMemoryValue] =
+    useState('');
+  const [savingMemory, setSavingMemory] =
+    useState(false);
 
   // Deals tab
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -177,6 +189,45 @@ setEditAssignedTo(data.assigned_to ?? '');
     setLoadingCustom(false);
   }, [contactId, supabase]);
 
+  const fetchMemories = useCallback(
+    async () => {
+      if (!contactId) return;
+
+      setLoadingMemory(true);
+
+      try {
+        const response = await fetch(
+          `/api/contacts/${contactId}/memory`,
+        );
+
+        const payload =
+          await response.json().catch(
+            () => ({}),
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            payload?.error ||
+              `HTTP ${response.status}`,
+          );
+        }
+
+        setMemories(
+          payload.memories ?? [],
+        );
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : 'Failed to load customer memory',
+        );
+      } finally {
+        setLoadingMemory(false);
+      }
+    },
+    [contactId],
+  );
+
   const fetchDeals = useCallback(async () => {
     if (!contactId) return;
     setLoadingDeals(true);
@@ -204,10 +255,11 @@ setEditAssignedTo(data.assigned_to ?? '');
       fetchTags();
       fetchNotes();
       fetchCustomFields();
+      fetchMemories();
       fetchDeals();
       fetchTeamMembers();
     }
-  }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchDeals]);
+  }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchMemories, fetchDeals]);
 
   async function copyPhone() {
     if (!contact) return;
@@ -355,6 +407,113 @@ setEditAssignedTo(data.assigned_to ?? '');
     setSavingCustom(false);
   }
 
+  async function saveMemory() {
+    if (
+      !contactId ||
+      !memoryKey.trim() ||
+      !memoryValue.trim()
+    ) {
+      toast.error(
+        'Memory key and value are required',
+      );
+      return;
+    }
+
+    setSavingMemory(true);
+
+    try {
+      const response = await fetch(
+        `/api/contacts/${contactId}/memory`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+          body: JSON.stringify({
+            key: memoryKey.trim(),
+            value:
+              memoryValue.trim(),
+          }),
+        },
+      );
+
+      const payload =
+        await response.json().catch(
+          () => ({}),
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ||
+            `HTTP ${response.status}`,
+        );
+      }
+
+      setMemoryKey('');
+      setMemoryValue('');
+      await fetchMemories();
+
+      toast.success(
+        'Customer memory saved',
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to save customer memory',
+      );
+    } finally {
+      setSavingMemory(false);
+    }
+  }
+
+  async function deleteMemory(
+    memoryId: string,
+  ) {
+    if (!contactId) return;
+
+    try {
+      const response = await fetch(
+        `/api/contacts/${contactId}/memory?memory_id=${encodeURIComponent(
+          memoryId,
+        )}`,
+        {
+          method: 'DELETE',
+        },
+      );
+
+      const payload =
+        await response.json().catch(
+          () => ({}),
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ||
+            `HTTP ${response.status}`,
+        );
+      }
+
+      setMemories((current) =>
+        current.filter(
+          (memory) =>
+            memory.id !== memoryId,
+        ),
+      );
+
+      toast.success(
+        'Customer memory deleted',
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to delete customer memory',
+      );
+    }
+  }
+
   async function createTask() {
   if (!contactId || !taskTitle.trim()) {
     toast.error('Task title is required');
@@ -499,6 +658,12 @@ setEditAssignedTo(data.assigned_to ?? '');
                   className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
                 >
                   Custom Fields
+                </TabsTrigger>
+                <TabsTrigger
+                  value="memory"
+                  className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+                >
+                  Memory
                 </TabsTrigger>
                 <TabsTrigger
                   value="deals"
@@ -760,6 +925,111 @@ setEditAssignedTo(data.assigned_to ?? '');
                     </Button>
                   </div>
                 )}
+              </TabsContent>
+
+              {/* Customer Memory Tab */}
+              <TabsContent
+                value="memory"
+                className="flex-1 overflow-y-auto px-4 py-3"
+              >
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-slate-200">
+                      Customer Memory
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Persistent customer facts available to the AI assistant.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-800/40 p-3">
+                    <Input
+                      value={memoryKey}
+                      onChange={(e) =>
+                        setMemoryKey(e.target.value)
+                      }
+                      placeholder="Memory key (e.g. preferred therapist)"
+                      className="bg-slate-900 border-slate-700 text-white"
+                    />
+
+                    <Textarea
+                      value={memoryValue}
+                      onChange={(e) =>
+                        setMemoryValue(e.target.value)
+                      }
+                      placeholder="Memory value"
+                      rows={3}
+                      className="bg-slate-900 border-slate-700 text-white"
+                    />
+
+                    <Button
+                      type="button"
+                      onClick={saveMemory}
+                      disabled={
+                        savingMemory ||
+                        !memoryKey.trim() ||
+                        !memoryValue.trim()
+                      }
+                      size="sm"
+                    >
+                      {savingMemory
+                        ? 'Saving...'
+                        : 'Save Memory'}
+                    </Button>
+                  </div>
+
+                  {loadingMemory ? (
+                    <div className="py-8 text-center text-sm text-slate-500">
+                      Loading memory...
+                    </div>
+                  ) : memories.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-slate-500">
+                      No customer memory saved yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {memories.map((memory) => (
+                        <div
+                          key={memory.id}
+                          className="rounded-lg border border-slate-700/60 bg-slate-800/30 p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs text-slate-500">
+                                {memory.memory_key}
+                              </p>
+
+                              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-200">
+                                {memory.memory_value}
+                              </p>
+
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                {memory.source} · confidence{' '}
+                                {Math.round(
+                                  memory.confidence * 100,
+                                )}
+                                %
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                deleteMemory(
+                                  memory.id,
+                                )
+                              }
+                              className="text-xs text-slate-600 hover:text-red-400"
+                              title="Delete memory"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </TabsContent>
 
               {/* Deals Tab */}

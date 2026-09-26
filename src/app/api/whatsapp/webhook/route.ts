@@ -11,6 +11,12 @@ import {
 } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { routeToAI } from '@/lib/ai/router'
+import {
+  extractMemoryFacts,
+  formatCustomerMemoryContext,
+  getCustomerMemories,
+  upsertCustomerMemoryFacts,
+} from '@/lib/customer-memory'
 import { processAIIntent } from '@/lib/ai/crm-actions'
 import { engineSendText } from '@/lib/automations/meta-send'
 import {
@@ -871,7 +877,71 @@ const inboundText = contentText ?? message.text?.body ?? ''
     inboundText.trim()
   ) {
   try {
-    const aiResult = await routeToAI(inboundText)
+    const extractedMemoryFacts =
+      extractMemoryFacts(
+        inboundText,
+      )
+
+    if (
+      extractedMemoryFacts.length
+    ) {
+      try {
+        await upsertCustomerMemoryFacts(
+          accountId,
+          contactRecord.id,
+          extractedMemoryFacts,
+        )
+      } catch (memoryError) {
+        logger.warn(
+          "customer_memory_write_failed",
+          {
+            error:
+              memoryError instanceof Error
+                ? memoryError.message
+                : String(memoryError),
+            contactId:
+              contactRecord.id,
+          },
+        )
+      }
+    }
+
+    let customerMemoryContext =
+      "No saved customer memory."
+
+    try {
+      const customerMemories =
+        await getCustomerMemories(
+          accountId,
+          contactRecord.id,
+        )
+
+      customerMemoryContext =
+        formatCustomerMemoryContext(
+          customerMemories,
+        )
+    } catch (memoryError) {
+      logger.warn(
+        "customer_memory_read_failed",
+        {
+          error:
+            memoryError instanceof Error
+              ? memoryError.message
+              : String(memoryError),
+          contactId:
+            contactRecord.id,
+        },
+      )
+    }
+
+    const aiResult =
+      await routeToAI(
+        inboundText,
+        {
+          memoryContext:
+            customerMemoryContext,
+        },
+      )
 
     await processAIIntent({
       intent: aiResult.intent,

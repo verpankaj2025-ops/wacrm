@@ -5,6 +5,7 @@ const apiKey = process.env.GEMINI_API_KEY;
 
 export async function generateAIReply(
   message: string,
+  context?: { memoryContext?: string },
 ): Promise<AIResponse> {
 
   if (!apiKey) {
@@ -338,6 +339,16 @@ Customer:
 
 Reply:
 "Sure 😊 Main follow-up request note kar raha hoon. Kis time call karna theek rahega?"
+
+
+Customer Memory:
+
+Use this memory as background context only.
+Do not invent facts that are not present.
+Prefer the latest customer message when it conflicts with memory.
+Do not reveal internal memory fields to the customer.
+
+${context?.memoryContext ?? "No saved customer memory."}
 
 Customer message:
 ${message}

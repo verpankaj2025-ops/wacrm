@@ -142,6 +142,31 @@ export interface ContactNote {
   created_at: string;
 }
 
+export interface CustomerMemory {
+  id: string;
+  account_id: string;
+  contact_id: string;
+  memory_key: string;
+  memory_value: string;
+  value_type:
+    | 'text'
+    | 'number'
+    | 'boolean'
+    | 'date'
+    | 'time';
+  source:
+    | 'customer'
+    | 'agent'
+    | 'system'
+    | 'import';
+  confidence: number;
+  metadata?: Record<string, unknown>;
+  first_seen_at: string;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type ConversationStatus = 'open' | 'pending' | 'closed';
 
 export type ConversationControlMode = 'ai' | 'human' | 'paused';
