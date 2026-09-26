@@ -11,6 +11,7 @@ import {
 } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { routeToAI } from '@/lib/ai/router'
+import type { AIIntent } from '@/lib/ai/types'
 import {
   extractMemoryFacts,
   formatCustomerMemoryContext,
@@ -19,6 +20,18 @@ import {
 } from '@/lib/customer-memory'
 import { recalculateLeadScore } from '@/lib/lead-scoring'
 import { processAIIntent } from '@/lib/ai/crm-actions'
+import { extractSalesSignals } from '@/lib/ai/sales-signal-extractor'
+import {
+  buildSalesContext,
+  deriveSalesStage,
+  type SalesState,
+} from '@/lib/ai/sales-state'
+import {
+  createOrGetSalesAppointment,
+  isExplicitBookingConfirmation,
+  markSalesBookingComplete,
+  shouldCreateSalesBooking,
+} from '@/lib/ai/sales-booking'
 import { engineSendText } from '@/lib/automations/meta-send'
 import {
   handleTemplateWebhookChange,
@@ -935,14 +948,292 @@ const inboundText = contentText ?? message.text?.body ?? ''
       )
     }
 
-    const aiResult =
-      await routeToAI(
-        inboundText,
+    let salesContext =
+      "No sales state available."
+
+    let salesBookingReply:
+      | string
+      | null = null
+
+    let salesBookingIntent:
+      | AIIntent
+      | null = null
+
+    try {
+      const {
+        data: salesContact,
+        error: salesContactError,
+      } = await supabaseAdmin()
+        .from("contacts")
+        .select(
+          "name,sales_stage,sales_service,sales_date,sales_time,sales_last_question,sales_booking_confirmed",
+        )
+        .eq("id", contactRecord.id)
+        .eq("account_id", accountId)
+        .maybeSingle()
+
+      if (salesContactError) {
+        throw new Error(
+          salesContactError.message,
+        )
+      }
+
+      const existingSalesState: SalesState = {
+        stage:
+          salesContact?.sales_stage === "handoff"
+            ? "handoff"
+            : salesContact?.sales_stage === "booked"
+              ? "booked"
+              : salesContact?.sales_stage === "confirmation"
+                ? "confirmation"
+                : salesContact?.sales_stage === "name"
+                  ? "name"
+                  : salesContact?.sales_stage === "time"
+                    ? "time"
+                    : salesContact?.sales_stage === "date"
+                      ? "date"
+                      : "service",
+        service:
+          salesContact?.sales_service ?? null,
+        date:
+          salesContact?.sales_date ?? null,
+        time:
+          salesContact?.sales_time ?? null,
+        customerName:
+          salesContact?.name ?? null,
+        bookingConfirmed:
+          Boolean(
+            salesContact?.sales_booking_confirmed,
+          ),
+      }
+
+      const signals =
+        extractSalesSignals(
+          inboundText,
+        )
+
+      const nextState: SalesState = {
+        ...existingSalesState,
+        service:
+          signals.service ??
+          existingSalesState.service ??
+          null,
+        date:
+          signals.date ??
+          existingSalesState.date ??
+          null,
+        time:
+          signals.time ??
+          existingSalesState.time ??
+          null,
+        customerName:
+          signals.customerName ??
+          existingSalesState.customerName ??
+          null,
+      }
+
+      const nextStage =
+        deriveSalesStage(
+          nextState,
+        )
+
+      await supabaseAdmin()
+        .from("contacts")
+        .update({
+          sales_stage:
+            nextStage,
+          sales_service:
+            nextState.service ?? null,
+          sales_date:
+            nextState.date ?? null,
+          sales_time:
+            nextState.time ?? null,
+          sales_updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          "id",
+          contactRecord.id,
+        )
+        .eq(
+          "account_id",
+          accountId,
+        )
+
+      salesContext =
+        buildSalesContext(
+          {
+            ...nextState,
+            stage:
+              nextStage,
+          },
+        )
+
+      // Deterministic booking gate:
+      // only an explicit confirmation can create an
+      // appointment, and all required booking fields
+      // must already be present.
+      const bookingService =
+        nextState.service
+
+      const bookingDate =
+        nextState.date
+
+      const bookingTime =
+        nextState.time
+
+      const bookingReady =
+        shouldCreateSalesBooking({
+          message:
+            inboundText,
+          service:
+            bookingService,
+          date:
+            bookingDate,
+          time:
+            bookingTime,
+          bookingConfirmed:
+            nextState.bookingConfirmed,
+        })
+
+      if (
+        bookingReady
+      ) {
+        if (
+          !bookingService ||
+          !bookingDate ||
+          !bookingTime
+        ) {
+          throw new Error(
+            "Sales booking fields became invalid after booking readiness check.",
+          )
+        }
+        logger.info(
+          "ai_sales_booking_attempt",
+          {
+            contactId:
+              contactRecord.id,
+            conversationId:
+              conversation.id,
+            service:
+              bookingService,
+            date:
+              bookingDate,
+            time:
+              bookingTime,
+          },
+        )
+
+        const booking =
+          await createOrGetSalesAppointment({
+            accountId,
+            contactId:
+              contactRecord.id,
+            conversationId:
+              conversation.id,
+            createdByUserId:
+              configOwnerUserId,
+            service:
+              bookingService,
+            date:
+              bookingDate,
+            time:
+              bookingTime,
+            customerName:
+              nextState.customerName ??
+              null,
+            bookingConfirmed:
+              true,
+          })
+
+        await markSalesBookingComplete({
+          accountId,
+          contactId:
+            contactRecord.id,
+          appointmentId:
+            booking.appointment.id,
+        })
+
+        salesBookingIntent =
+          "BOOK_APPOINTMENT"
+
+        if (booking.created) {
+          salesBookingReply =
+            `Done 😊 Your ${bookingService} appointment request is confirmed for ${bookingDate} at ${bookingTime}.`
+        } else {
+          salesBookingReply =
+            `Your ${bookingService} appointment is already confirmed for ${bookingDate} at ${bookingTime}.`
+        }
+
+        logger.info(
+          "ai_sales_booking_success",
+          {
+            contactId:
+              contactRecord.id,
+            conversationId:
+              conversation.id,
+            appointmentId:
+              booking.appointment.id,
+            created:
+              booking.created,
+            bookingKey:
+              booking.bookingKey,
+          },
+        )
+      }
+
+      logger.info(
+        "ai_sales_state_updated",
         {
-          memoryContext:
-            customerMemoryContext,
+          contactId:
+            contactRecord.id,
+          salesStage:
+            nextStage,
+          service:
+            nextState.service,
+          date:
+            nextState.date,
+          time:
+            nextState.time,
+          hasCustomerName:
+            Boolean(
+              nextState.customerName,
+            ),
         },
       )
+    } catch (salesStateError) {
+      logger.warn(
+        "ai_sales_state_update_failed",
+        {
+          error:
+            salesStateError instanceof Error
+              ? salesStateError.message
+              : String(salesStateError),
+          contactId:
+            contactRecord.id,
+        },
+      )
+    }
+
+    const aiResult =
+      salesBookingReply
+        ? {
+            reply:
+              salesBookingReply,
+            intent:
+              salesBookingIntent ??
+              "BOOK_APPOINTMENT",
+            confidence: 100,
+            handoff: false,
+          }
+        : await routeToAI(
+            inboundText,
+            {
+              memoryContext:
+                customerMemoryContext,
+              salesContext,
+            },
+          )
 
     await processAIIntent({
       intent: aiResult.intent,
@@ -952,6 +1243,39 @@ const inboundText = contentText ?? message.text?.body ?? ''
       userId: configOwnerUserId,
     })
 
+
+    if (
+      !salesBookingReply &&
+      !aiResult.handoff &&
+      /\?\s*$/.test(
+        aiResult.reply.trim(),
+      )
+    ) {
+      await supabaseAdmin()
+        .from("contacts")
+        .update({
+          sales_last_question:
+            aiResult.reply.trim(),
+          sales_updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          "id",
+          contactRecord.id,
+        )
+        .eq(
+          "account_id",
+          accountId,
+        )
+
+      logger.debug(
+        "sales_question_persist",
+        {
+          contactId:
+            contactRecord.id,
+        },
+      )
+    }
 
     try {
       await recalculateLeadScore({

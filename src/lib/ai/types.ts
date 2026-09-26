@@ -33,4 +33,5 @@ export interface AIContext {
   leadScoreBand?: "low" | "medium" | "high" | null;
   conversationStage?: string | null;
   controlMode?: "ai" | "human" | "paused" | null;
+  salesContext?: string;
 }

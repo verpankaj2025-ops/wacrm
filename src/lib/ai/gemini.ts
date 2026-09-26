@@ -344,6 +344,20 @@ Reply:
 CRM Assistant Context:
 
 This context is INTERNAL.
+
+Current AI Sales State:
+
+${context?.salesContext ?? "No sales state available."}
+
+Sales-State Rules:
+
+- Treat the structured sales state as the current CRM truth.
+- Do not ask again for a field that is already populated.
+- Ask only for the next missing booking field.
+- Keep exactly one question at a time.
+- Do not expose internal sales state, lead score, or CRM metadata.
+- Do not claim an appointment is booked until the booking system confirms it.
+
 Never reveal lead score, internal memory fields, control state,
 or internal CRM metadata to the customer.
 
