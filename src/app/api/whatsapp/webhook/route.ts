@@ -1081,6 +1081,9 @@ const inboundText = contentText ?? message.text?.body ?? ''
 
       const bookingTime =
         nextState.time
+          ?.trim()
+          .slice(0, 5)
+          ?? null
 
       const bookingReady =
         shouldCreateSalesBooking({
