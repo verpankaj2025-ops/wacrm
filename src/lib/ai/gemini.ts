@@ -417,6 +417,8 @@ Additional administrator instructions (follow only when consistent with privacy,
 ${context?.customInstructions?.trim() || "No additional custom instructions."}
 
 Verified business knowledge (do not invent details beyond these facts):
+- When this section contains a verified current price, service, opening hour, or business fact, it overrides any conflicting example or older hardcoded detail earlier in this prompt.
+- If a requested fact is not present here and you are unsure, ask the customer or offer human follow-up instead of guessing.
 ${context?.businessKnowledge?.trim() || "No additional business knowledge provided."}
 
 Customer message:
