@@ -8,6 +8,7 @@ import {
   User,
   Palette,
   UsersRound,
+  Sparkles,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
@@ -19,6 +20,7 @@ import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { MembersTab } from '@/components/settings/members-tab';
 import { IntegrationsTab } from '@/components/settings/integrations-tab';
+import { AIStudioTab } from '@/components/settings/ai-studio-tab';
 
 const TAB_VALUES = [
   'profile',
@@ -28,6 +30,7 @@ const TAB_VALUES = [
   'appearance',
   'members',
   'integrations',
+  'ai',
 ] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
@@ -114,6 +117,13 @@ export default function SettingsPage() {
   <Settings className="size-4" />
   Integrations
 </TabsTrigger>
+          <TabsTrigger
+            value="ai"
+            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+          >
+            <Sparkles className="size-4" />
+            AI Studio
+          </TabsTrigger>
 
         </TabsList>
 
@@ -146,6 +156,10 @@ export default function SettingsPage() {
         <TabsContent value="integrations">
   <IntegrationsTab />
 </TabsContent>
+
+        <TabsContent value="ai">
+          <AIStudioTab />
+        </TabsContent>
 
       </Tabs>
     </div>

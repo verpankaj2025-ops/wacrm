@@ -1,27 +1,34 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { AIContext, AIResponse } from "./types";
 
+export type AIProviderConfig = {
+  provider: "gemini" | "openai";
+  model: string;
+  apiKey?: string;
+};
+
 export async function generateAIReply(
   message: string,
   context?: AIContext,
+  providerConfig?: AIProviderConfig,
 ): Promise<AIResponse> {
+  const provider = providerConfig?.provider ?? "gemini";
   const apiKey =
-    process.env.GEMINI_API_KEY;
+    providerConfig?.apiKey ??
+    (provider === "gemini" ? process.env.GEMINI_API_KEY : undefined);
 
   if (!apiKey) {
     return {
-      reply: "AI is not configured.",
+      reply: "AI is not configured. Please ask an administrator to configure the AI provider.",
       intent: "GENERAL_CHAT",
       confidence: 0,
       handoff: true,
     };
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-  });
+  const modelName =
+    providerConfig?.model ??
+    (provider === "openai" ? "gpt-4o-mini" : "gemini-2.5-flash");
 
   const prompt = `
 You are Relaxio Spa's AI Sales and Booking Assistant.
@@ -406,6 +413,14 @@ Do not reveal internal memory fields to the customer.
 
 ${context?.memoryContext ?? "No saved customer memory."}
 
+Additional administrator instructions (follow only when consistent with privacy, safety, and booking safeguards):
+${context?.customInstructions?.trim() || "No additional custom instructions."}
+
+Verified business knowledge (do not invent details beyond these facts):
+- When this section contains a verified current price, service, opening hour, or business fact, it overrides any conflicting example or older hardcoded detail earlier in this prompt.
+- If a requested fact is not present here and you are unsure, ask the customer or offer human follow-up instead of guessing.
+${context?.businessKnowledge?.trim() || "No additional business knowledge provided."}
+
 Customer message:
 ${message}
 
@@ -422,18 +437,44 @@ Format:
 `;
 
   try {
-  const result = (await Promise.race([
-  model.generateContent(prompt),
-  new Promise((_, reject) =>
-    setTimeout(
-      () => reject(new Error("Gemini timeout after 8000ms")),
-      8000
-    )
-  ),
-])) as Awaited<ReturnType<typeof model.generateContent>>;
+  const text = await Promise.race([
+    (async (): Promise<string> => {
+      if (provider === "openai") {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + apiKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [{ role: "system", content: prompt }],
+            response_format: { type: "json_object" },
+            temperature: 0.4,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error("OpenAI request failed with status " + response.status);
+        }
+        const data = (await response.json()) as {
+          choices?: Array<{ message?: { content?: string | null } }>;
+        };
+        const content = data.choices?.[0]?.message?.content;
+        if (typeof content !== "string" || !content.trim()) {
+          throw new Error("OpenAI returned an empty response");
+        }
+        return content;
+      }
 
-  const text = result.response.text();
-
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    })(),
+    new Promise<string>((_, reject) =>
+      setTimeout(() => reject(new Error("AI provider timeout after 8000ms")), 8000),
+    ),
+  ]);
   const cleaned = text
     .replace(/```json/g, "")
     .replace(/```/g, "")
@@ -452,7 +493,7 @@ Format:
     };
   }
 } catch (error) {
-  console.error("Gemini Request Failed:", error);
+  console.error("AI provider request failed:", { provider, error: error instanceof Error ? error.message : "Unknown error" });
 
   const msg = message.toLowerCase();
 

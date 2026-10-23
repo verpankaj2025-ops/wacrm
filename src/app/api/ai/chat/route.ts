@@ -87,7 +87,7 @@ export async function POST(
     const result =
       await routeToAI(
         message,
-        assistantContext,
+        { ...assistantContext, accountId: ctx.accountId },
       );
 
     return NextResponse.json(
