@@ -26,6 +26,12 @@ export interface AIConversationMessage {
 }
 
 export interface AIContext {
+  /** Server-supplied account scope for loading account-specific AI configuration. */
+  accountId?: string;
+  /** Administrator-authored guidance; core privacy and booking safeguards take precedence. */
+  customInstructions?: string;
+  /** Administrator-verified business facts. */
+  businessKnowledge?: string;
   memoryContext?: string;
   recentMessages?: AIConversationMessage[];
   customerName?: string | null;

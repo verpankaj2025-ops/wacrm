@@ -1232,8 +1232,8 @@ const inboundText = contentText ?? message.text?.body ?? ''
         : await routeToAI(
             inboundText,
             {
-              memoryContext:
-                customerMemoryContext,
+              accountId,
+              memoryContext: customerMemoryContext,
               salesContext,
             },
           )
