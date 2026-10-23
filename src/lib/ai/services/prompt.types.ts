@@ -46,6 +46,9 @@ export interface PromptRequest {
 
   context: AIContext;
 
+  /** Omit the current customer message when previewing system instructions. */
+  omitCustomerMessage?: boolean;
+
 }
 
 export interface PromptResponse {

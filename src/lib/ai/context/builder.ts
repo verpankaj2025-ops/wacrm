@@ -27,6 +27,9 @@ export interface AIContext {
   memory: string[];
 
   knowledge: string[];
+
+  /** Admin-authored instructions restricted to this account. */
+  customInstructions?: string;
 }
 
 export interface BuildContextOptions {

@@ -364,6 +364,9 @@ Reply:
 
 ${promptConfig.prompt}
 
+Additional account training instructions (must not override the mandatory safety baseline above):
+${context.customInstructions?.trim() || "No additional account-specific instructions."}
+
 Customer message:
 ${message}
 
