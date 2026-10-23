@@ -60,10 +60,17 @@ export async function PATCH(request: Request) {
       model: model.trim(),
       custom_instructions: customInstructions,
       business_knowledge: businessKnowledge,
-      api_key_encrypted: current?.api_key_encrypted ?? null,
-      api_key_last4: current?.api_key_last4 ?? null,
+      api_key_encrypted:
+        current?.provider && current.provider !== provider
+          ? null
+          : current?.api_key_encrypted ?? null,
+      api_key_last4:
+        current?.provider && current.provider !== provider
+          ? null
+          : current?.api_key_last4 ?? null,
       updated_at: new Date().toISOString(),
     };
+    // A credential belongs to one provider. Never reuse a Gemini key as an OpenAI key (or vice versa).
     if (apiKey.trim()) {
       patch.api_key_encrypted = encrypt(apiKey.trim());
       patch.api_key_last4 = apiKey.trim().slice(-4);

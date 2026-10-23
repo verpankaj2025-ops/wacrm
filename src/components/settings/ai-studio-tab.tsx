@@ -89,7 +89,17 @@ export function AIStudioTab() {
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-1 text-sm text-slate-300"><span>Provider</span>
             <select className="w-full rounded-md border border-slate-700 bg-slate-800 p-2 text-white" value={settings.provider}
-              onChange={(e) => setSettings({ ...settings, provider: e.target.value as Settings["provider"], model: e.target.value === "openai" ? "gpt-4o-mini" : "gemini-2.5-flash" })} disabled={loading || saving}>
+              onChange={(e) => {
+                const provider = e.target.value as Settings["provider"];
+                setSettings({
+                  ...settings,
+                  provider,
+                  model: provider === "openai" ? "gpt-4o-mini" : "gemini-2.5-flash",
+                  hasApiKey: provider === settings.provider ? settings.hasApiKey : false,
+                  apiKeyLast4: provider === settings.provider ? settings.apiKeyLast4 : null,
+                });
+                if (provider !== settings.provider) setApiKey("");
+              }} disabled={loading || saving}>
               <option value="gemini">Google Gemini</option><option value="openai">OpenAI</option>
             </select>
           </label>
