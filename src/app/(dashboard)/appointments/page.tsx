@@ -1011,7 +1011,7 @@ export default function AppointmentsPage() {
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-xs text-slate-500">
-        Appointment times use your browser's local timezone. Later
+        Appointment times use your browser&apos;s local timezone. Later
         Completed and no-show visits can now be rebooked directly
         from history. Rebooking keeps the original appointment linked
         to the new visit.
