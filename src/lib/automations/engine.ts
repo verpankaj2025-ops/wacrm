@@ -22,6 +22,7 @@ import {
 } from '@/lib/rate-limit'
 import { engineSendText, engineSendTemplate } from './meta-send'
 import { isWithinCustomerServiceWindow } from './customer-window'
+import { postSafeWebhook } from './ssrf'
 
 // ------------------------------------------------------------
 // Public API
@@ -1360,11 +1361,12 @@ return 'deal created'
       const cfg = step.step_config as SendWebhookStepConfig
       if (!cfg.url) throw new Error('send_webhook needs url')
       const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
-      const res = await fetch(cfg.url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
+      const res = await postSafeWebhook(
+        cfg.url,
         body,
-      })
+        { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
+        10_000,
+      )
       if (!res.ok) throw new Error(`webhook returned ${res.status}`)
       return `webhook ${res.status}`
     }

@@ -90,6 +90,63 @@ describe("validateStepsForActivation", () => {
     expect(garbage.map((i) => i.message)).toContain(
       "webhook URL is not a valid URL",
     );
+
+    const privateIp = validateStepsForActivation([
+      {
+        step_type: "send_webhook",
+        step_config: { url: "http://127.0.0.1:8080/hook" },
+      },
+    ]);
+    expect(privateIp.map((i) => i.message)).toContain(
+      "webhook URL cannot point to internal or private destinations",
+    );
+
+    const metadataIp = validateStepsForActivation([
+      {
+        step_type: "send_webhook",
+        step_config: { url: "http://169.254.169.254/latest/meta-data" },
+      },
+    ]);
+    expect(metadataIp.map((i) => i.message)).toContain(
+      "webhook URL cannot point to internal or private destinations",
+    );
+
+    const credentials = validateStepsForActivation([
+      {
+        step_type: "send_webhook",
+        step_config: { url: "https://user:pass@hooks.example.com" },
+      },
+    ]);
+    expect(credentials.map((i) => i.message)).toContain(
+      "webhook URL must not contain credentials",
+    );
+
+    const oversizedBody = validateStepsForActivation([
+      {
+        step_type: "send_webhook",
+        step_config: { url: "https://hooks.example.com/in", body_template: "x".repeat(1024 * 1024 + 1) },
+      },
+    ]);
+    expect(oversizedBody.some((i) => i.path === "steps[0].body_template" && /1 MiB limit/.test(i.message))).toBe(true);
+
+    const unsafeHeaders = validateStepsForActivation([
+      {
+        step_type: "send_webhook",
+        step_config: { url: "https://hooks.example.com/in", headers: { "Content-Length": "2" } },
+      },
+    ]);
+    expect(unsafeHeaders.some((i) => i.path === "steps[0].headers" && /not allowed/.test(i.message))).toBe(true);
+
+    const tooManyHeaders = Object.fromEntries(
+      Array.from({ length: 33 }, (_, i) => [`X-Test-${i}`, "v"]),
+    );
+    const excessiveHeaders = validateStepsForActivation([
+      {
+        step_type: "send_webhook",
+        step_config: { url: "https://hooks.example.com/in", headers: tooManyHeaders },
+      },
+    ]);
+    expect(excessiveHeaders.some((i) => i.path === "steps[0].headers" && /header limit/.test(i.message))).toBe(true);
   });
 
   it("validates assign_conversation only when mode is 'specific'", () => {

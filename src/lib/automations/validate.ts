@@ -1,4 +1,5 @@
 import type { AutomationTriggerType } from '@/types'
+import { validateWebhookRequest, validateWebhookUrl } from './ssrf'
 
 // ------------------------------------------------------------
 // Pre-flight config validation for automations about to be activated.
@@ -130,16 +131,32 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
         issues.push({ path: `${path}.url`, message: 'webhook URL is required' })
         break
       }
-      try {
-        const u = new URL(String(c.url))
-        if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      {
+        const check = validateWebhookUrl(String(c.url))
+        if (!check.valid) {
           issues.push({
             path: `${path}.url`,
-            message: 'webhook URL must use http or https',
+            message: check.error || 'webhook URL is not a valid URL',
           })
         }
-      } catch {
-        issues.push({ path: `${path}.url`, message: 'webhook URL is not a valid URL' })
+      }
+      if (c.body_template !== undefined) {
+        const bodyError = validateWebhookRequest(c.body_template, {})
+        if (bodyError) {
+          issues.push({ path: `${path}.body_template`, message: bodyError })
+        }
+      }
+      {
+        const headersError = validateWebhookRequest('', c.headers ?? {})
+        if (headersError) {
+          const isHeaderError = headersError.startsWith('webhook headers') ||
+            headersError.startsWith('invalid webhook header') ||
+            headersError.startsWith('webhook header')
+          issues.push({
+            path: `${path}.headers`,
+            message: isHeaderError ? headersError : `invalid webhook headers: ${headersError}`,
+          })
+        }
       }
       break
     case 'close_conversation':
