@@ -308,8 +308,7 @@ export async function GET(
       const paramsMap =
         await resolveTemplateParams(
           broadcast.account_id,
-          (contacts ??
-            []) as any,
+          contacts ?? [],
           broadcast.template_variables ??
             {},
         )
