@@ -1,5 +1,6 @@
 
 import { NextResponse } from "next/server"
+import { decrypt } from "@/lib/whatsapp/encryption"
 
 import { createClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/automations/admin-client"
@@ -154,7 +155,7 @@ export async function POST(
     }
 
     const accessToken =
-      require("@/lib/whatsapp/encryption").decrypt(
+      decrypt(
         whatsappConfig.access_token,
       )
 
