@@ -329,7 +329,7 @@ export async function PATCH(
       status === "scheduled" ||
       status === "confirmed"
     ) {
-      let conflictQuery =
+      const conflictQuery =
         admin
           .from("appointments")
           .select(
