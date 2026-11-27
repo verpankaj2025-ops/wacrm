@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { appUrl } from '../lib/config';
 import { google, login, signup } from '../app/actions';
 import { safeDestination } from '../lib/validation';
 import { Button } from './ui/button';
@@ -8,6 +9,7 @@ const messages: Record<string, string> = {
   rate: 'Sign-in attempts are temporarily limited. Please try again later.',
   login: 'We could not sign you in. Check your credentials and confirm your email.',
   signup: 'We could not create your account. Please try again.',
+  'password-reset': 'Password updated. Sign in with your new password.',
   confirm: 'Check your email for a confirmation link.',
   oauth: 'Google sign-in is unavailable. Please try again.',
   callback: 'This sign-in link is invalid or expired. Please sign in again.',
@@ -35,7 +37,7 @@ export function AuthScreen({ mode, next, status }: { mode: 'login' | 'signup'; n
           <Button>{registering ? 'Create account' : 'Sign in'}</Button>
         </form>
         {!registering && process.env.RELAXIO_DATA_MODE === 'wacrm' && (
-          <a href="https://crm.relaxiospa.in/forgot-password">Forgot password?</a>
+          <Link href={appUrl('/forgot-password').href}>Forgot password?</Link>
         )}
         {process.env.RELAXIO_DATA_MODE !== 'wacrm' && <form action={google} className="stack">
           <input type="hidden" name="next" value={destination} />
