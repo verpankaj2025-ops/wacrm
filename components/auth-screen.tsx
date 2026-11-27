@@ -34,6 +34,9 @@ export function AuthScreen({ mode, next, status }: { mode: 'login' | 'signup'; n
           {registering && <p className="muted text-sm">Use at least 12 characters.</p>}
           <Button>{registering ? 'Create account' : 'Sign in'}</Button>
         </form>
+        {!registering && process.env.RELAXIO_DATA_MODE === 'wacrm' && (
+          <a href="https://crm.relaxiospa.in/forgot-password">Forgot password?</a>
+        )}
         {process.env.RELAXIO_DATA_MODE !== 'wacrm' && <form action={google} className="stack">
           <input type="hidden" name="next" value={destination} />
           <Button variant="outline">Continue with Google</Button>
