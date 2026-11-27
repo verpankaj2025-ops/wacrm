@@ -24,12 +24,32 @@ describe('AI provider fallback', () => {
     vi.stubEnv('GEMINI_MODELS', 'primary,secondary');
     vi.stubEnv('FREELLMAPI_API_KEY', '');
     vi.stubEnv('FREELLMAPI_BASE_URL', '');
+    vi.stubEnv('OPENROUTER_API_KEY', '');
     vi.stubEnv('OPENAI_API_KEY', '');
     vi.stubEnv('OPENAI_MODEL', '');
   });
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+  });
+
+  it('tries only the OpenRouter free model after Gemini fails', async () => {
+    generate.mockRejectedValue({ status: 429 });
+    vi.stubEnv('OPENROUTER_API_KEY', 'test-router-key');
+    const request = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ choices: [{ message: { content: reply } }] })
+      );
+    vi.stubGlobal('fetch', request);
+    expect(await generateAIReply('I want an appointment')).toMatchObject({
+      intent: 'BOOK_APPOINTMENT',
+    });
+    expect(request).toHaveBeenCalledOnce();
+    const [url, options] = request.mock.calls[0];
+    expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+    expect(options.headers.Authorization).toBe('Bearer test-router-key');
+    expect(JSON.parse(options.body).model).toBe('openrouter/free');
   });
 
   it('routes exhausted Gemini requests through FreeLLMAPI before OpenAI', async () => {

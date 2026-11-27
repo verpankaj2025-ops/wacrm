@@ -141,6 +141,31 @@ export async function generateAIReply(message: string): Promise<AIResponse> {
         .content;
     });
   }
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  if (openRouterKey) {
+    providers.push(async () => {
+      const response = await fetch(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          method: 'POST',
+          redirect: 'error',
+          headers: {
+            Authorization: `Bearer ${openRouterKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'openrouter/free',
+            messages: [{ role: 'user', content: prompt }],
+            stream: false,
+          }),
+          signal: AbortSignal.timeout(12000),
+        }
+      );
+      if (!response.ok) throw new Error('OpenRouter request failed');
+      return openAIOutput.parse(await response.json()).choices[0].message
+        .content;
+    });
+  }
   const openAIKey = process.env.OPENAI_API_KEY;
   const openAIModel = process.env.OPENAI_MODEL;
   if (openAIKey && openAIModel) {
