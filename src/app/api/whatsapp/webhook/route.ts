@@ -714,21 +714,9 @@ if (convError) {
   
   const inboundText = contentText ?? message.text?.body ?? ''
 
-  console.log(
-  "[AI DEBUG]",
-  {
-    flowConsumed,
-    inboundText,
-  }
-)
-
   if (!flowConsumed && inboundText.trim()) {
   try {
-    const aiResult = await routeToAI(
-  inboundText,
-  conversation.id,
-  contactRecord.id,
-)
+    const aiResult = await routeToAI(inboundText)
 
     await processAIIntent({
       intent: aiResult.intent,
@@ -739,7 +727,6 @@ if (convError) {
     })
 
     if (!aiResult.handoff) {
-      console.log("[AI SEND START]", aiResult.reply)
 
 await engineSendText({
   accountId,
@@ -749,10 +736,8 @@ await engineSendText({
   text: aiResult.reply,
 })
 
-console.log("[AI SEND SUCCESS]")
     }
-  } catch (error) {
-  console.error('[AI ERROR]', error)
+  } catch {
 
   await supabaseAdmin()
   .from('tasks')
@@ -763,9 +748,7 @@ console.log("[AI SEND SUCCESS]")
     conversation_id: conversation.id,
     title: 'AI Failure',
     description:
-      error instanceof Error
-        ? error.message
-        : 'Unknown AI error',
+      'AI processing failed',
     priority: 'high',
     status: 'pending',
   })
