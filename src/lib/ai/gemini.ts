@@ -100,6 +100,47 @@ export async function generateAIReply(message: string): Promise<AIResponse> {
       });
     }
   }
+  const freeKey = process.env.FREELLMAPI_API_KEY;
+  const freeBase = process.env.FREELLMAPI_BASE_URL;
+  if (freeKey && freeBase) {
+    providers.push(async () => {
+      const endpoint = new URL(freeBase);
+      const local = ['localhost', '127.0.0.1', '[::1]'].includes(
+        endpoint.hostname
+      );
+      if (
+        endpoint.username ||
+        endpoint.password ||
+        endpoint.search ||
+        endpoint.hash ||
+        !(
+          endpoint.protocol === 'https:' ||
+          (local && endpoint.protocol === 'http:')
+        )
+      ) {
+        throw new Error('Invalid FreeLLMAPI endpoint');
+      }
+      endpoint.pathname =
+        endpoint.pathname.replace(/\/+$/, '') + '/chat/completions';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        redirect: 'error',
+        headers: {
+          Authorization: `Bearer ${freeKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: process.env.FREELLMAPI_MODEL || 'auto',
+          messages: [{ role: 'user', content: prompt }],
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) throw new Error('FreeLLMAPI request failed');
+      return openAIOutput.parse(await response.json()).choices[0].message
+        .content;
+    });
+  }
   const openAIKey = process.env.OPENAI_API_KEY;
   const openAIModel = process.env.OPENAI_MODEL;
   if (openAIKey && openAIModel) {
