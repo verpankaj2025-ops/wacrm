@@ -34,7 +34,7 @@ export async function proxy(request: NextRequest) {
   if (user && (
     request.nextUrl.pathname === '/login' ||
     request.nextUrl.pathname === '/signup' ||
-    request.nextUrl.pathname === '/forgot-password'
+    (request.nextUrl.pathname === '/forgot-password' && !request.nextUrl.searchParams.has('expired'))
   )) {
     const url = request.nextUrl.clone()
     const inviteToken = request.nextUrl.searchParams.get('invite')

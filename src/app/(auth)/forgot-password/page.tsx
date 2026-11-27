@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
+import { requestRecovery } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,23 +17,23 @@ import {
 import { MessageSquare, CheckCircle, ArrowLeft } from "lucide-react";
 
 export default function ForgotPasswordPage() {
+  return <Suspense><ForgotPasswordForm /></Suspense>;
+}
+
+function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const supabase = createClient();
+  const expired = useSearchParams().has("expired");
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-    });
-
-    if (error) {
-      setError(error.message);
+    if (!(await requestRecovery(email))) {
+      setError("Could not send a reset link. Check the email address or try again later.");
       setLoading(false);
       return;
     }
@@ -55,7 +56,7 @@ export default function ForgotPasswordPage() {
             <CardDescription className="text-slate-400">
               We&apos;ve sent a password reset link to{" "}
               <span className="text-white">{email}</span>. Please check your
-              inbox.
+              inbox and open the newest link in this same browser.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -87,9 +88,9 @@ export default function ForgotPasswordPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleReset} className="flex flex-col gap-4">
-            {error && (
+            {(error || expired) && (
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                {error}
+                {error ?? "This link expired or was opened in a different browser. Request a new link."}
               </div>
             )}
 
