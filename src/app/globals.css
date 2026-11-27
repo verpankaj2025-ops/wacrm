@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: "DM Sans", system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: "Instrument Serif", Georgia, serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -266,4 +266,47 @@ html[data-theme="rose"] {
   html {
     @apply font-sans;
   }
+}
+/* Relaxio's forest and sage workspace, with a cream sign-in surface. */
+html[data-theme="emerald"] {
+  --background: #131f1a;
+  --foreground: #f5f3e9;
+  --card: #1c2d25;
+  --popover: #23372c;
+  --muted: #253b30;
+  --muted-foreground: #b1c5b8;
+  --border: #3a5143;
+  --primary: #a8c6ad;
+  --primary-foreground: #182d23;
+  --sidebar: #192b22;
+  --sidebar-border: #344b3e;
+  --sidebar-primary: #a8c6ad;
+  --sidebar-primary-foreground: #182d23;
+  --sidebar-accent: #2a4234;
+  --ring: #a8c6ad;
+}
+
+.relaxio-auth { display:grid; min-height:100svh; grid-template-columns:minmax(0,1fr) minmax(0,1fr); color:#23392e; background:#faf8f2; }
+.relaxio-auth-brand { display:grid; gap:3rem; align-content:center; position:relative; isolation:isolate; overflow:hidden; min-height:15rem; padding:clamp(2rem,7vw,7rem); color:#f9f5eb; background:#245647; }
+.relaxio-wordmark { display:flex; align-items:center; gap:.7rem; font-size:1.1rem; font-weight:600; }
+.relaxio-auth-brand p { font-family:"Instrument Serif",Georgia,serif; max-width:15ch; font-size:clamp(2.8rem,6.5vw,6.3rem); line-height:.98; }
+.relaxio-auth-orbit { position:absolute; z-index:-1; width:34rem; height:34rem; right:-17rem; bottom:-19rem; border:1px solid #a8c6ad55; border-radius:50%; box-shadow:0 0 0 2rem #a8c6ad15,0 0 0 4rem #a8c6ad12,0 0 0 6rem #a8c6ad0c; }
+.relaxio-auth-panel { display:grid; align-items:center; padding:clamp(1.5rem,6vw,6rem); }
+.relaxio-auth-form { display:grid; gap:1.2rem; width:min(100%,23rem); margin-inline:auto; }
+.relaxio-auth-form form { display:grid; gap:.6rem; }
+.relaxio-auth-form h1 { font-family:"Instrument Serif",Georgia,serif; font-size:clamp(2.75rem,5vw,4rem); line-height:1.05; }
+.relaxio-auth-form a { color:#245647; text-decoration:underline; text-underline-offset:.22em; }
+.relaxio-auth-form label { font-size:.92rem; font-weight:600; }
+.relaxio-auth-form input { border:1px solid #bfcbbf; border-radius:.6rem; min-height:2.9rem; padding:.65rem .8rem; background:#fffefa; color:#182d23; }
+.relaxio-auth-form :focus-visible { outline:3px solid #368367; outline-offset:2px; }
+.relaxio-password-label { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.5rem; margin-top:.5rem; font-size:.88rem; }
+.relaxio-submit,.relaxio-google { border-radius:.65rem; min-height:2.9rem; font-weight:600; padding:.6rem .9rem; cursor:pointer; }
+.relaxio-submit { display:flex; justify-content:space-between; align-items:center; background:#245647; color:#fffefa; margin-top:.5rem; }
+.relaxio-google { background:#fffefa; border:1px solid #bfcbbf; color:#234638; }
+.relaxio-auth-form button:disabled { cursor:wait; opacity:.65; }
+.relaxio-auth-error { color:#862d26; background:#fbebe5; border-radius:.6rem; padding:.65rem .8rem; }
+@media (max-width: 47rem) {
+  .relaxio-auth { grid-template-columns:1fr; }
+  .relaxio-auth-brand { gap:1.4rem; }
+  .relaxio-auth-brand p { font-size:clamp(2.5rem,10vw,3.6rem); }
 }

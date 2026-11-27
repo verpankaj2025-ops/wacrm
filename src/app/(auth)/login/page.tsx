@@ -1,161 +1,91 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowRight, Leaf } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { MessageSquare, UsersRound } from "lucide-react";
 
-// `useSearchParams` opts the component out of static prerendering
-// unless it sits under a Suspense boundary. We split the form into
-// a child component so the outer page can prerender the chrome
-// (background, card frame) while the form hydrates with the query
-// string on the client.
 export default function LoginPage() {
-  return (
-    <Suspense fallback={null}>
-      <LoginPageInner />
-    </Suspense>
-  );
+  return <Suspense><LoginForm /></Suspense>;
 }
 
-function LoginPageInner() {
-  const searchParams = useSearchParams();
-  // Forwarded from `/join/<token>` when the visitor already has an
-  // account. After a successful sign-in we send them to the join
-  // page to accept rather than to /dashboard.
-  const inviteToken = searchParams.get("invite");
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+function LoginForm() {
+  const params = useSearchParams();
   const router = useRouter();
-  const supabase = createClient();
+  const rawInvite = params.get("invite");
+  const invite = rawInvite && /^[a-zA-Z0-9_-]{1,256}$/.test(rawInvite) ? rawInvite : null;
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(params.has("oauth_error") ? "Google sign-in could not finish. Please try again." : null);
+  const googleEnabled = process.env.NEXT_PUBLIC_RELAXIO_GOOGLE_LOGIN === "1";
+  const resetUrl = process.env.NEXT_PUBLIC_RELAXIO_RECOVERY_URL ?? "/forgot-password";
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  async function signIn(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
     setError(null);
-    setLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-      return;
+    const form = new FormData(event.currentTarget);
+    try {
+      const { error } = await createClient().auth.signInWithPassword({
+        email: String(form.get("email") ?? "").trim(),
+        password: String(form.get("password") ?? ""),
+      });
+      if (error) {
+        setError("Sign-in failed. Check your email and password, or reset your password.");
+        return;
+      }
+      router.replace(invite ? `/join/${encodeURIComponent(invite)}` : "/dashboard");
+      router.refresh();
+    } catch {
+      setError("Could not reach sign-in. Please try again.");
+    } finally {
+      setPending(false);
     }
+  }
 
-    if (inviteToken) {
-      router.push(`/join/${encodeURIComponent(inviteToken)}`);
-    } else {
-      router.push("/dashboard");
+  async function signInWithGoogle() {
+    setPending(true);
+    setError(null);
+    try {
+      const callback = new URL("/auth/callback", window.location.origin);
+      if (invite) callback.searchParams.set("invite", invite);
+      const { error } = await createClient().auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: callback.href },
+      });
+      if (!error) return;
+    } catch {
+      // Use a generic error without exposing Auth or provider details.
     }
-  };
+    setError("Could not start Google sign-in. Please try again.");
+    setPending(false);
+  }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-      <Card className="w-full max-w-md border-slate-800 bg-slate-900">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            {inviteToken ? (
-              <UsersRound className="h-6 w-6 text-primary" />
-            ) : (
-              <MessageSquare className="h-6 w-6 text-primary" />
-            )}
+  return <main className="relaxio-auth">
+    <aside className="relaxio-auth-brand">
+      <div className="relaxio-wordmark"><Leaf size={22} aria-hidden="true" /> Relaxio CRM</div>
+      <p>Room for better<br />customer conversations.</p>
+      <div className="relaxio-auth-orbit" aria-hidden="true" />
+    </aside>
+    <section className="relaxio-auth-panel" aria-labelledby="welcome">
+      <div className="relaxio-auth-form">
+        <h1 id="welcome">{invite ? "Accept your invitation" : "Welcome back"}</h1>
+        {error && <p role="alert" className="relaxio-auth-error">{error}</p>}
+        {googleEnabled && <button className="relaxio-google" type="button" onClick={signInWithGoogle} disabled={pending}>
+          Continue with Google
+        </button>}
+        <form onSubmit={signIn}>
+          <label htmlFor="email">Email</label>
+          <input id="email" name="email" type="email" autoComplete="email" required />
+          <div className="relaxio-password-label">
+            <label htmlFor="password">Password</label>
+            <Link href={resetUrl}>Forgot password?</Link>
           </div>
-          <CardTitle className="text-xl text-white">
-            {inviteToken ? "Sign in to accept" : "Welcome back"}
-          </CardTitle>
-          <CardDescription className="text-slate-400">
-            {inviteToken
-              ? "Sign in and we'll take you to the invitation."
-              : "Sign in to your account"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                {error}
-              </div>
-            )}
-
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email" className="text-slate-300">
-                Email
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500 focus-visible:border-primary focus-visible:ring-primary/20"
-              />
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-slate-300">
-                  Password
-                </Label>
-                <Link
-                  href="/forgot-password"
-                  className="text-sm text-primary hover:text-primary/80"
-                >
-                  Forgot password?
-                </Link>
-              </div>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500 focus-visible:border-primary focus-visible:ring-primary/20"
-              />
-            </div>
-
-            <Button
-              type="submit"
-              disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {loading ? "Signing in..." : "Sign in"}
-            </Button>
-          </form>
-
-          <p className="mt-6 text-center text-sm text-slate-400">
-            Don&apos;t have an account?{" "}
-            <Link
-              href={
-                inviteToken
-                  ? `/signup?invite=${encodeURIComponent(inviteToken)}`
-                  : "/signup"
-              }
-              className="text-primary hover:text-primary/80"
-            >
-              Create account
-            </Link>
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
+          <input id="password" name="password" type="password" autoComplete="current-password" required />
+          <button type="submit" className="relaxio-submit" disabled={pending}>Sign in <ArrowRight size={17} aria-hidden="true" /></button>
+        </form>
+        {!invite && <Link href="/signup">Create an account</Link>}
+      </div>
+    </section>
+  </main>;
 }
