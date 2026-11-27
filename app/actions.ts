@@ -48,7 +48,15 @@ export async function signup(form: FormData) {
 
 export async function google(form: FormData) {
   const next = safeDestination(form.get('next'));
-  if (process.env.RELAXIO_DATA_MODE === 'wacrm') authRedirect('/login', next, 'oauth');
+  if (process.env.RELAXIO_DATA_MODE === 'wacrm') {
+    if (process.env.RELAXIO_GOOGLE_OAUTH !== '1') authRedirect('/login', next, 'oauth');
+    const canonical = appUrl('/login');
+    const requestHost = (await headers()).get('host');
+    if (requestHost !== canonical.host) {
+      canonical.searchParams.set('next', next);
+      redirect(canonical.href);
+    }
+  }
   const ip = (await headers()).get('x-real-ip') ?? 'gateway';
   if (!(await allowAttempt('auth', 'oauth:' + ip))) authRedirect('/login', next, 'rate');
   const callback = appUrl('/auth/callback');
