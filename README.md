@@ -2,6 +2,10 @@
 
 Relaxio CRM is a WhatsApp-first CRM. This release contains organization onboarding and identity management.
 
+## Working with Codex
+
+Open the `relaxio-crm` branch and give Codex one task, such as “Verify login and Existing deals on Preview.” [AGENTS.md](AGENTS.md) and the [agent runbook](docs/agent-runbook.md) define the tools and checks. [plan.md](plan.md) tracks module progress and pending verification.
+
 ## Run locally
 
 1. Install dependencies with `npm ci`.
