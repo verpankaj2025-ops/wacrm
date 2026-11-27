@@ -39,7 +39,7 @@ export function AuthScreen({ mode, next, status }: { mode: 'login' | 'signup'; n
         {!registering && process.env.RELAXIO_DATA_MODE === 'wacrm' && (
           <Link href={appUrl('/forgot-password').href}>Forgot password?</Link>
         )}
-        {process.env.RELAXIO_DATA_MODE !== 'wacrm' && <form action={google} className="stack">
+        {(process.env.RELAXIO_DATA_MODE !== 'wacrm' || process.env.RELAXIO_GOOGLE_OAUTH === '1') && <form action={google} className="stack">
           <input type="hidden" name="next" value={destination} />
           <Button variant="outline">Continue with Google</Button>
         </form>}
