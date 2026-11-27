@@ -21,14 +21,18 @@ function allowLocalAuth(key: string) {
 }
 
 export async function allowAttempt(scope: 'auth' | 'invite', identifier: string) {
+  const hasUpstash = !!(process.env.UPSTASH_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_TOKEN);
+  const url = hasUpstash ? process.env.UPSTASH_REDIS_REST_URL : process.env.KV_REST_API_URL;
+  const token = hasUpstash ? process.env.UPSTASH_REDIS_REST_TOKEN : process.env.KV_REST_API_TOKEN;
   if (scope === 'auth' && process.env.NODE_ENV === 'development' &&
       process.env.RELAXIO_DATA_MODE === 'wacrm' && process.env.RELAXIO_LOCAL_AUTH_LIMIT === '1' &&
-      !process.env.UPSTASH_REDIS_REST_URL && !process.env.UPSTASH_REDIS_REST_TOKEN) {
+      !url && !token) {
     return allowLocalAuth(digest(identifier));
   }
+  if (!url || !token) return false;
   try {
     const limiter = new Ratelimit({
-      redis: Redis.fromEnv(),
+      redis: new Redis({ url, token }),
       limiter: Ratelimit.slidingWindow(scope === 'invite' ? 8 : 12, '10 m'),
       prefix: 'relaxio:' + scope,
     });
