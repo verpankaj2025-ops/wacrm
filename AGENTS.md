@@ -8,6 +8,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
+## Task entry point
+
+A short task request is enough. Read [the agent runbook](docs/agent-runbook.md) at the start and use its plugin routing, environment map and verification steps. Resume known work from `plan.md` without asking the user to repeat context. Recheck changing provider state live.
+
 ## Repository and environments
 
 - Use `verpankaj2025-ops/wacrm` on branch `relaxio-crm` for this app. The `main` branch is the original wacrm app. Check the checkout, branch, working tree and target environment before editing. Preserve unrelated work.
