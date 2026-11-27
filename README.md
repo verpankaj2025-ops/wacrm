@@ -1,158 +1,59 @@
-# wacrm — CRM Template for WhatsApp
+# Relaxio CRM
 
-> Self-hostable CRM template for WhatsApp® — shared inbox, contacts,
-> sales pipelines, broadcasts, and no-code automations. Fork it, brand
-> it, host it.
+Relaxio CRM is a WhatsApp-first CRM. This release contains organization onboarding and identity management.
 
-<p align="center">
-  <a href="https://www.hostinger.com/web-apps-hosting">
-    <img src="./.github/assets/hostinger-deploy.png" alt="Ship your Node.js app in one click — Deploy to Hostinger" width="900">
-  </a>
-</p>
+## Working with Codex
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-violet.svg)](./LICENSE)
-[![CI](https://github.com/ArnasDon/wacrm/actions/workflows/ci.yml/badge.svg)](https://github.com/ArnasDon/wacrm/actions/workflows/ci.yml)
-[![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs)](https://nextjs.org)
-[![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%2B%20Auth-3ecf8e?logo=supabase)](https://supabase.com)
-[![Stars](https://img.shields.io/github/stars/ArnasDon/wacrm?style=social)](https://github.com/ArnasDon/wacrm/stargazers)
+Open the `relaxio-crm` branch and give Codex one task, such as “Verify login and Existing deals on Preview.” [AGENTS.md](AGENTS.md) and the [agent runbook](docs/agent-runbook.md) define the tools and checks. [plan.md](plan.md) tracks module progress and pending verification.
 
-The marketing site and self-host docs live in a separate repo:
-[ArnasDon/wacrm-site](https://github.com/ArnasDon/wacrm-site)
-([wacrm.tech](https://wacrm.tech)). This repo is the product —
-clone or fork it to run your own CRM.
+## Run locally
 
-## What you get out of the box
+1. Install dependencies with `npm ci`.
+2. Copy `.env.local.example` to `.env.local`. Set the origin of the app, the dedicated development Supabase URL and keys, and the Upstash Redis REST credentials. Keep the service role key server-side. The app's auth actions fail closed when Redis is unavailable.
+3. Apply the migration under `supabase/migrations` to the dedicated development database.
+4. With approval to configure the development Auth project, enable verified email signup and Google OAuth, register its Supabase Google callback, add the app's `/auth/callback` URL to Supabase's redirect allowlist, and set the site URL. The default email confirmation template uses PKCE and requires the original browser. For cross-device confirmation, Supabase can use `/auth/confirm` with a token hash. Set the email template only after approving the Auth configuration change.
+5. Run `npm run dev -- --port 3100` and open the app on the origin in `APP_URL`.
 
-- **Shared inbox** on the official WhatsApp Business API — multiple
-  agents working one number, per-conversation assignment, status, and
-  notes.
-- **Contacts + tags + custom fields**, CSV import, deduplication.
-- **Sales pipelines** (Kanban) with deals linked to conversations.
-- **Broadcasts** with Meta-approved templates, delivery + read
-  tracking, per-recipient variable substitution.
-- **No-code automations** — triggers on inbound messages, new
-  contacts, keywords, or schedule; conditional branches, waits,
-  tags, webhooks. Visual builder.
-- **Real-time dashboard** — response times, daily volume, pipeline
-  value, cross-module activity feed.
-- **Team accounts** — invite teammates by link, role-based access
-  (owner / admin / agent / viewer), ownership transfer. Every install
-  is account-scoped, so one shared inbox can be staffed by a whole
-  team. Solo use stays single-user with zero setup.
-- **Account management** — email, password, avatar, global sign-out.
+The invite creator copies the link and shares it with the intended teammate. Invite redemption requires the matching verified email. The application rate-limits it to eight attempts per user per ten minutes and the database exposes redemption only to the server role.
 
-## Why fork this?
+Run `npm run lint`, `npm run typecheck`, `npm test` and `npm run test:e2e`. Playwright uses its installed Chromium by default. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing binary. The default browser tests cover public onboarding. Policy tests apply the migration to embedded PostgreSQL with a test Auth schema. Provider verification requires dedicated development Supabase and Upstash credentials.
 
-This is a **template**, not a product. Forking means you get:
+To exercise signup, login, org creation, invitation acceptance and concurrent redemption against your dedicated local stack, export the variables from your test environment and run `RELAXIO_LOCAL_PROVIDER_TEST=1 npm run test:e2e`. The suite requires email confirmations on and uses the local Auth admin API to confirm its disposable test account. It does not initiate Google sign-in. Google OAuth requires a separate browser check with a configured Google test client.
 
-- **Full ownership** — your code, your Supabase project, your domain,
-  your data. No SaaS lock-in, no seat pricing, no trust dance.
-- **Full customisation** — add the fields your team needs, remove the
-  modules you don't, redesign anything. The stack is boring on
-  purpose (Next.js + Supabase + Tailwind) so the learning curve is
-  short.
-- **Zero ops to start** — [Hostinger](https://www.hostinger.com/web-apps-hosting)
-  Managed Node.js deploys a fork in a few clicks. No Docker, no
-  Kubernetes, no infra team needed.
-  ([See below ↓](#-deploy-on-hostinger-recommended))
-- **Real security primitives** — token encryption (AES-256-GCM), RLS
-  on every table, HMAC-verified webhooks, CSP, rate limiting, CI
-  typecheck/build on every PR.
+## Tenant data, Storage and Realtime
 
-Not a framework. Not an SDK. A concrete, working CRM you can stand up
-in an afternoon and make yours.
+Use composite foreign keys of the form `(org_id, related_id)` against tenant-owned rows with matching keys. The audit-to-invitation constraint follows this pattern. RLS checks the authenticated user's current membership through the private role helper.
 
-## Quick start
+Use `organizationFilesBucket` and `organizationFilePath` from `lib/tenant.ts` with the session-bound Supabase client. Members can read files. Owners, admins and agents can write in their own namespace. The private bucket expects objects under `<org-id>/<path>`.
 
-```bash
-# Fork on GitHub first: https://github.com/ArnasDon/wacrm → Fork
-git clone https://github.com/<your-username>/wacrm.git
-cd wacrm
-npm install
-cp .env.local.example .env.local   # fill in Supabase + Meta creds
-npm run dev
-```
+Use `organizationBroadcastChannel` for private, receive-only organization Broadcast channels. Publish organization events privately from a trusted server and send invalidations with no sensitive data. Subscribers should refetch protected data through RLS. Supabase caches subscription authorization, so an existing channel may retain receive permission until a JWT refresh or reconnect. Live verification on an approved dev stack should test Storage HTTP access and private Broadcast joins and delivery with separate A and B sessions.
 
-Open <http://localhost:3000>. You'll be redirected to `/login` (or
-`/dashboard` if already signed in).
+## Contacts and leads
 
-## 🚀 Deploy on Hostinger (recommended)
+Open **Contacts and leads** from the active organization. Owners, admins and agents can add or edit contacts, attach tags, manage custom field values and import CSV. Viewers can browse the directory and contact details. Each organization can define up to 20 custom fields using text, number, yes/no or date types.
 
-<p align="center">
-  <a href="https://www.hostinger.com/web-apps-hosting">
-    <img src="./.github/assets/hostinger-deploy.png" alt="Ship your Node.js app in one click — Deploy to Hostinger" width="1000">
-  </a>
-</p>
-<p align="center">
-  <a href="https://wacrm.tech/docs/deployment-hostinger">
-    <img src="https://img.shields.io/badge/Step--by--step_guide-wacrm.tech%2Fdocs-111?style=for-the-badge" alt="Step-by-step guide" height="44">
-  </a>
-</p>
+Upload a UTF-8 CSV with `name,phone` or `name,phone,kind` headers and up to 500 data records or 256 KiB. Use `contact` or `lead` in the optional kind column. Local phone numbers default to India. Imports skip phones that already exist in the selected organization and leave those contacts' details intact. Rejected-row downloads contain CSV record numbers and validation reasons only. The contacts code returns generic server errors and does not capture contact names or phone numbers in app logs or Sentry.
 
-**wacrm is built to run on [Hostinger](https://www.hostinger.com/web-apps-hosting).**
-It's the path we test, document, and recommend — and the fastest way
-to get a production-grade CRM live without owning a VPS or a
-Kubernetes cluster.
+## Pipeline
 
-### Why Hostinger?
+Open **Pipeline** from the active organization. Add a stage with a position to control its column order, then create a deal with a contact, stage and amount in INR. Use the stage selector on a deal to move it. The server checks the active organization, role and destination, and rejects a move if the deal has left the source stage. Viewers can browse the board. To create a deal for a contact outside the first 100 options, open the contact's directory entry and select **Create a deal for this contact**.
 
-| | |
-|---|---|
-| **One-click Git deploy** | Connect your fork, push to `main`, Hostinger builds and ships it. No SSH, no Docker, no CI to wire up — this repo's own `main` deploys this way. |
-| **Managed Node.js** | Next.js 16 (App Router, server actions, ISR) runs out of the box on [Premium, Business, and Cloud](https://www.hostinger.com/web-apps-hosting) shared plans. You don't manage Node versions, processes, or reverse proxies. |
-| **Free SSL + free domain** | Automatic Let's Encrypt on your custom domain (or a free one included with annual plans). HTTPS is on by default — required for the WhatsApp Business webhook. |
-| **Global CDN + LiteSpeed** | Static assets cached at the edge, dynamic routes served from LiteSpeed. Snappy dashboards out of the box, no Cloudflare setup required. |
-| **Env vars + logs in hPanel** | Set `SUPABASE_*`, `WHATSAPP_*`, and `ENCRYPTION_KEY` from the panel — no `.env` on the server. Live application logs in the same UI. |
-| **DDoS protection + daily backups** | Built-in, no add-ons. The webhook endpoint is a public target — having protection at the edge matters. |
-| **Cheaper than a VPS** | Plans start at a few dollars a month — order-of-magnitude less than a comparable managed Node.js host, and you don't pay extra for the database (that's Supabase). |
-| **24/7 human support** | Live chat support in 20+ languages — useful when your CRM is the thing your team relies on to talk to customers. |
+When WhatsApp introduces conversations, add the optional conversation link using a composite foreign key keyed by `(org_id, conversation_id)`.
 
-### The 60-second version
+## WhatsApp inbox
 
-1. **Fork** this repo on GitHub.
-2. In **hPanel → Websites → Create**, pick **Node.js** and connect
-   your fork.
-3. Paste your Supabase + Meta env vars into hPanel.
-4. Push to `main`. Hostinger builds and serves it. Done.
+Use the dev Meta app's secret and a separate webhook verification token. Configure a supported Graph version and a 32-byte hex token key in ignored `.env.local`. Retain old key versions during rotation and resave each channel to encrypt it with the active key. An owner or admin can register a Meta phone-number ID, WABA ID and access token in **WhatsApp inbox**. Use only channel IDs belonging to the selected organization. The Meta token needs message-send and template-read access.
 
-Full walkthrough with screenshots:
-**[wacrm.tech/docs/deployment-hostinger](https://wacrm.tech/docs/deployment-hostinger)**.
+Point Meta at `/api/whatsapp/webhook` and subscribe to the messages webhook field. The callback validates the raw signature and acknowledges after the scoped database transaction commits. Provider retries cover transient database failures. Redis deduplication is best effort and the database key also protects against replay. Set reverse proxy and hosting access logs to omit webhook query strings, request bodies and authorization headers. The verify token is transmitted in Meta's GET query string.
 
-> _Note: wacrm is MIT-licensed and runs anywhere Node.js does
-> (Vercel, Railway, your own VPS). Hostinger is recommended, not
-> required._
+Record WhatsApp opt-in only after explicit consent. STOP records an opt-out. Free text requires both consent and an open 24-hour service window. Outside that window, the inbox checks the named template and language against Meta before sending. This module supports approved static templates without parameters. An unconfirmed outbound result is not automatically retried, because Meta can accept a request before the app receives or stores its response.
 
-## Documentation
+Live verification requires the development project, Upstash and Meta test assets. Check GET verification, signed inbound and duplicate delivery, approved template sends, status webhooks and STOP enforcement with the dev number.
 
-Full self-host documentation — Supabase migrations, WhatsApp Business
-API config, and production deploy — lives at
-**[wacrm.tech/docs](https://wacrm.tech/docs)**
-(source: [ArnasDon/wacrm-site](https://github.com/ArnasDon/wacrm-site)).
+## Automations
 
-Key pages:
-- [Getting started](https://wacrm.tech/docs/getting-started)
-- [Supabase setup](https://wacrm.tech/docs/supabase-setup)
-- [WhatsApp setup](https://wacrm.tech/docs/whatsapp-setup)
-- [Environment variables](https://wacrm.tech/docs/environment-variables)
-- [Deploy on Hostinger](https://wacrm.tech/docs/deployment-hostinger)
-- [Architecture](https://wacrm.tech/docs/architecture)
-- [Troubleshooting](https://wacrm.tech/docs/troubleshooting)
+Owners and admins can build per-organization workflows under **Automations**. Choose inbound, keyword, new contact or recurring schedule. Add up to ten ordered steps with optional conditions. A false condition skips that step. Tag actions require a contact. WhatsApp actions require a conversation, current opt-in and a Meta-approved static template. Schedule triggers may select a conversation. Pausing a workflow prevents new runs and new claims, and resuming can release queued work. Existing runs keep the steps saved when they were triggered.
 
-## Stack
+The runner uses a durable PostgreSQL queue. Configure your dev scheduler to POST to `/api/automations/run` every minute with `Authorization: Bearer <AUTOMATION_RUNNER_SECRET>`. Set a random secret of at least 32 characters in the app environment and the scheduler's secret store. Use a single schedule for the app. Each invocation processes up to ten steps, subject to its time budget. View run state in the workspace. Pending waits resume when due on a later tick. Transient internal errors get bounded retries. Delivery attempts with an uncertain outcome are failed for review to avoid duplicate external effects.
 
-- **App** — Next.js 16 (App Router), React 19, TypeScript, Tailwind v4.
-- **Data** — Supabase (Postgres + Auth + Storage + RLS).
-- **WhatsApp** — Meta Cloud API (official WhatsApp Business API).
-
-## Contributing
-
-This is a template, not a collaborative product — the expected flow is
-fork → customise → deploy, **not** upstream contribution. Bug reports
-and security issues are welcome; feature PRs often belong in your fork
-rather than here. Details in
-[`CONTRIBUTING.md`](./CONTRIBUTING.md) and
-[`.github/SECURITY.md`](./.github/SECURITY.md).
-
-## License
-
-[MIT](./LICENSE). Fork it, brand it, host it.
+For the optional webhook action, set `AUTOMATION_WEBHOOK_URL` to a trusted operator-managed HTTPS receiver. All workflows use this destination. Delivery carries a run ID, trigger kind and step number with an idempotency key. It omits contact and message content. The worker does not follow redirects.
